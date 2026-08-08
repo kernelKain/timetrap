@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -11,25 +10,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	httpapi "github.com/kernelKain/timetrap/backend/internal/transport/http"
 )
-
-type healthResponse struct {
-	Status    string `json:"status"`
-	Service   string `json:"service"`
-	Version   string `json:"version"`
-	Database  string `json:"database"`
-	Timestamp string `json:"timestamp"`
-}
-
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-}
-
-func (r *statusRecorder) WriteHeader(status int) {
-	r.status = status
-	r.ResponseWriter.WriteHeader(status)
-}
 
 func main() {
 	if err := run(); err != nil {
@@ -45,12 +28,13 @@ func run() error {
 		environment("ALLOWED_ORIGINS", "http://localhost:5173"),
 	)
 
-	configureLogger(environment("LOG_LEVEL", "debug"))
+	logger := configureLogger(environment("LOG_LEVEL", "debug"))
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/health", healthHandler(version))
-
-	handler := requestLogger(corsMiddleware(allowedOrigins, mux))
+	handler := httpapi.NewRouter(
+		logger,
+		allowedOrigins,
+		version,
+	)
 
 	server := &http.Server{
 		Addr:              ":" + port,
@@ -71,10 +55,12 @@ func run() error {
 	serverErrors := make(chan error, 1)
 
 	go func() {
-		slog.Info(
+		logger.Info(
 			"TimeTrap API starting",
-			"port", port,
-			"version", version,
+			"port",
+			port,
+			"version",
+			version,
 		)
 
 		serverErrors <- server.ListenAndServe()
@@ -85,8 +71,9 @@ func run() error {
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
+
 	case <-shutdownContext.Done():
-		slog.Info("Shutdown signal received")
+		logger.Info("Shutdown signal received")
 
 		timeoutContext, cancel := context.WithTimeout(
 			context.Background(),
@@ -98,82 +85,10 @@ func run() error {
 			return err
 		}
 
-		slog.Info("TimeTrap API stopped")
+		logger.Info("TimeTrap API stopped")
 	}
 
 	return nil
-}
-
-func healthHandler(version string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		response := healthResponse{
-			Status:    "ok",
-			Service:   "timetrap-api",
-			Version:   version,
-			Database:  "not_configured",
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			slog.Error("Unable to encode health response", "error", err)
-		}
-	}
-}
-
-func corsMiddleware(
-	allowedOrigins map[string]struct{},
-	next http.Handler,
-) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-
-		if origin != "" {
-			if _, allowed := allowedOrigins[origin]; !allowed {
-				http.Error(w, "origin not allowed", http.StatusForbidden)
-				return
-			}
-
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-			w.Header().Add("Vary", "Origin")
-		}
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-func requestLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		started := time.Now()
-		recorder := &statusRecorder{
-			ResponseWriter: w,
-			status:         http.StatusOK,
-		}
-
-		next.ServeHTTP(recorder, r)
-
-		slog.Info(
-			"HTTP request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", recorder.status,
-			"duration", time.Since(started),
-		)
-	})
 }
 
 func environment(name, fallback string) string {
@@ -185,28 +100,33 @@ func environment(name, fallback string) string {
 	return value
 }
 
-func parseAllowedOrigins(value string) map[string]struct{} {
-	origins := make(map[string]struct{})
+func parseAllowedOrigins(value string) []string {
+	origins := make([]string, 0)
 
 	for _, origin := range strings.Split(value, ",") {
 		origin = strings.TrimSpace(origin)
 		if origin != "" {
-			origins[origin] = struct{}{}
+			origins = append(origins, origin)
 		}
 	}
 
 	return origins
 }
 
-func configureLogger(levelName string) {
+func configureLogger(levelName string) *slog.Logger {
 	level := slog.LevelInfo
 	if strings.EqualFold(levelName, "debug") {
 		level = slog.LevelDebug
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: level,
-	}))
+	logger := slog.New(slog.NewJSONHandler(
+		os.Stdout,
+		&slog.HandlerOptions{
+			Level: level,
+		},
+	))
 
 	slog.SetDefault(logger)
+
+	return logger
 }

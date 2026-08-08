@@ -4,7 +4,7 @@
 
 TimeTrap is a design-time verifier that finds intervals where cached entitlements, sessions, tokens, or other authorization copies remain valid after their source authorization has been revoked.
 
-> Project status: Phase 0 — MVP scope and demonstration design.
+> Project status: Phase 1 — runnable React frontend and Go API shells.
 
 ## The problem
 
@@ -120,3 +120,91 @@ Stateless Go API on Zerops
     v                       v
 Pure temporal analyzer   Managed PostgreSQL
                          over a private network
+```
+
+The PostgreSQL integration and temporal analyzer are intentionally deferred to later phases.
+
+## Current implementation
+
+Phase 1 provides:
+
+- A React, TypeScript, Vite, and Tailwind frontend
+- A standard-library Go HTTP API
+- `GET /api/v1/health`
+- Environment-controlled API URL and CORS origin
+- Healthy, checking, and unavailable frontend states
+- Structured API request and lifecycle logs
+- Graceful API shutdown
+
+No database, analyzer, authentication, scenario builder, or deployment logic is implemented yet.
+
+## Requirements
+
+- Node.js 20.19+ or 22.12+
+- npm
+- Go 1.22+
+
+## Local development
+
+Install frontend dependencies:
+
+```bash
+npm --prefix frontend install
+```
+
+Start the Go API:
+
+```bash
+go -C backend run ./cmd/api
+```
+
+The API defaults to `http://localhost:8080`.
+
+Start the frontend in another terminal:
+
+```bash
+npm --prefix frontend run dev
+```
+
+Open `http://localhost:5173`. The page should change from `Checking API…` to `API healthy`.
+
+Test the API directly:
+
+```bash
+curl http://localhost:8080/api/v1/health
+```
+
+Copy the safe example values from `.env.example` when environment customization is needed. Never commit `.env`, `.env.local`, `.mcp.json`, `.zcp/`, access tokens, or credentials.
+
+## Remote ZCP development
+
+The ZCP workspace already provides Browser VS Code, Codex, and project-scoped ZCP access.
+
+If port `8080` is occupied, run the API on another port:
+
+```bash
+PORT=8082 go -C backend run ./cmd/api
+```
+
+Remote code-server development can use an ignored `frontend/.env.development.local` file to configure its `/absproxy/5173/` path, allowed host, and API proxy target. Workspace-specific hostnames must not be committed.
+
+## Verification
+
+Backend:
+
+```bash
+gofmt -w backend
+go -C backend test ./...
+go -C backend vet ./...
+```
+
+Frontend:
+
+```bash
+npm --prefix frontend run lint
+npm --prefix frontend run build
+```
+
+## AI assistance
+
+Codex assisted with Phase 0 planning, Phase 1 scaffolding, implementation guidance, debugging, and documentation. Zerops Control Plane was used to inspect the project and adopt the existing development and staging services. All commands and acceptance checks were manually run and reviewed.                         

@@ -96,18 +96,27 @@ Contradictory events on the same object at the same minute are rejected. For exa
 
 ## Temporal semantics
 
-TimeTrap uses the following frozen rules:
+TimeTrap uses the following frozen temporal rules:
 
-1. Time is represented by non-negative integer minutes.
-2. Events at minute `t` take effect at minute `t`.
-3. Intervals use half-open notation: `[start, end)`.
-4. The start of an interval is included.
-5. The end of an interval is excluded.
-6. An object issued at minute 0 and expired at minute 60 is valid during `[0, 60)`.
-7. An object revoked at minute 10 is invalid beginning at minute 10.
-8. Analysis makes claims only inside the configured horizon.
-9. A violation that remains active at the horizon is reported as ongoing.
-10. “Safe” means every configured invariant passed within the submitted model and horizon.
+| Rule | Meaning |
+| --- | --- |
+| Time unit | Non-negative integer minute |
+| Interval | Half-open: `[start, end)` |
+| Event at `t` | Takes effect at minute `t` |
+| Issue or refresh at `t` | Object is valid beginning at `t` |
+| Revoke or expire at `t` | Object is invalid beginning at `t` |
+| Grace deadline | `revokeMinute + graceMinutes` |
+| Violation start | Deadline minute, if the dependent remains valid |
+| Horizon | Exclusive end of the analyzed interval |
+| Ongoing finding | Finding remains active until the horizon |
+| Safe | No invariant failed inside the submitted horizon |
+
+### Consequences
+
+- An object issued at minute `0` and expired at minute `60` is valid during `[0, 60)`.
+- A cache revoked at minute `10` is invalid beginning at minute `10`.
+- An event occurring exactly at the horizon cannot create a positive-duration violation beyond the horizon.
+- TimeTrap makes no claim after the configured horizon.
 
 ## Frozen invariants
 
@@ -158,32 +167,90 @@ A continuous validity segment beginning with `issue` or `refresh` must not excee
 
 A refresh begins a new validity segment.
 
-## Analysis strategy
+## Analyzer API and execution strategy
 
-The analyzer will evaluate relevant boundary moments instead of iterating through an unbounded time range.
+### Public API
+
+The analyzer exposes one primary function:
+
+```go
+func Analyze(scenario domain.Scenario) (domain.Analysis, error)
+```
+
+The function receives a complete domain scenario and returns either:
+
+- A deterministic analysis result, or
+- An error when the model cannot be evaluated safely.
+
+The analyzer may call `scenario.Validate()` defensively. It must not assume that every caller has already passed the scenario through the HTTP validation endpoint.
+
+An unsafe scenario is a successful analysis result, not a Go error. The error return is reserved for models that cannot be evaluated reliably.
+
+### Execution flow
+
+```text
+Validate defensive assumptions
+        ↓
+Generate candidate boundaries
+        ↓
+Sort and deduplicate boundaries
+        ↓
+Evaluate every segment [boundary[i], boundary[i+1])
+        ↓
+Reduce object states at the segment start
+        ↓
+Evaluate every configured invariant
+        ↓
+Open, continue or close violation intervals
+        ↓
+Select the earliest violation deterministically
+        ↓
+Attach deterministic remediation
+```
+
+The analyzer evaluates segments between relevant boundaries instead of checking every minute in the horizon.
 
 Candidate boundaries include:
 
-- Minute 0
+- Minute `0`
 - Scenario horizon
 - Every event minute
-- The minute immediately before an event, when valid
-- The minute immediately after an event, when valid
+- The minute immediately before an event, when inside the horizon
+- The minute immediately after an event, when inside the horizon
 - Revocation plus grace duration
 - Maximum-validity deadlines
 - Expiration boundaries
 
-The analyzer will:
+### Analyzer guarantees
 
-1. Generate candidate boundaries.
-2. Sort and deduplicate them.
-3. Reduce every object's events at each boundary.
-4. Evaluate every configured invariant.
-5. Convert consecutive failing states into intervals.
-6. Select the earliest violation.
-7. Return normalized evidence and remediation.
+- The submitted scenario is treated as immutable input.
+- `Analyze` must not reorder, normalize or otherwise mutate the submitted scenario.
+- Any sorting must operate on newly allocated copies.
+- The same input must always produce the same result.
+- Output ordering must not depend on Go map iteration order.
+- Missing or invalid object references produce an error, not a safe result.
+- The analyzer does not depend on HTTP, PostgreSQL or display formatting.
+- The analyzer makes no claims after the configured horizon.
 
-The analyzer must not depend on HTTP, PostgreSQL, or display formatting.
+### Why this API matters
+
+- `domain.Scenario` is the analyzer's input contract.
+- `domain.Analysis` is its output contract.
+- The error return distinguishes an unsafe model from a model that could not be evaluated.
+- Defensive validation protects future callers such as tests, CLI tools or background workers.
+- Input immutability makes repeated analyses reproducible.
+
+## Analyzer limitations
+
+- Time uses integer-minute resolution.
+- Analysis is bounded by the submitted horizon.
+- A safe result applies only to the submitted model.
+- Object state is simplified to valid or invalid.
+- Events are assumed to occur exactly at their configured minute.
+- The analyzer does not model network delay, clock skew or concurrent races.
+- Incorrect or incomplete input can produce an irrelevant result.
+- An ongoing violation is truncated at the horizon.
+- The analyzer does not inspect a live application.
 
 ## Canonical demonstration
 

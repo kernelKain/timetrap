@@ -1,289 +1,64 @@
-# TimeTrap architecture and frozen MVP scope
-
-## Product definition
-
-TimeTrap is a design-time verifier that finds intervals where cached entitlements, sessions, tokens, or other authorization copies remain valid after their source authorization has been revoked.
-
-## Primary users
-
-- Backend developers
-- Authentication and identity developers
-- SaaS engineering teams
-- Subscription and entitlement-system developers
-- Security reviewers
-
-## Secondary users
-
-- Students learning authorization architecture
-- Technical interviewers and educators
-- Teams reviewing cache and session policies
-
-## Core product promise
-
-TimeTrap turns a hidden timing disagreement into a deterministic counterexample containing:
-
-- Exact violation start
-- Exact violation end
-- Duration
-- Involved objects
-- Responsible events
-- Failed invariant
-- Suggested configuration-level remediation
-
-It verifies a submitted design model. It does not inspect a live application.
-
-## Domain terminology
-
-### Timed object
-
-A simplified authorization-related object whose validity changes over time.
-
-### Event
-
-A state transition applied to one object at a particular integer minute.
-
-### Source
-
-The authoritative object from which another object's legitimacy is derived.
-
-For example, a subscription record can be the source of a cached premium entitlement.
-
-### Dependent
-
-An object that should not remain valid beyond a rule-defined relationship with its source.
-
-### Invariant
-
-A condition expected to remain true throughout the submitted simulation horizon.
-
-### Horizon
-
-The final minute covered by the bounded analysis.
-
-### Counterexample
-
-The earliest reproducible interval during which an invariant fails.
-
-## Supported objects
-
-The MVP supports exactly these object kinds:
-
-| Object | Intended use |
-| --- | --- |
-| Subscription | Billing or plan source of truth |
-| Cached entitlement | Cached authorization or feature access |
-| Session | Server-side or logical user session |
-| Token | Access, refresh, reset or capability token |
-| Invitation | Time-limited invitation |
-| Credential | Temporary or revocable credential |
-
-These kinds provide labels and validation context. The core reducer still operates on the same valid/invalid state model.
-
-## Supported events
-
-The MVP supports exactly these event types:
-
-| Event | State effect |
-| --- | --- |
-| Issue | Makes the object valid |
-| Refresh | Makes or keeps the object valid and resets its validity start |
-| Revoke | Makes the object invalid |
-| Expire | Makes the object invalid |
-
-Every object begins invalid.
-
-Contradictory events on the same object at the same minute are rejected. For example, an object cannot be both issued and revoked at minute 10.
-
-## Temporal semantics
-
-TimeTrap uses the following frozen temporal rules:
-
-| Rule | Meaning |
-| --- | --- |
-| Time unit | Non-negative integer minute |
-| Interval | Half-open: `[start, end)` |
-| Event at `t` | Takes effect at minute `t` |
-| Issue or refresh at `t` | Object is valid beginning at `t` |
-| Revoke or expire at `t` | Object is invalid beginning at `t` |
-| Grace deadline | `revokeMinute + graceMinutes` |
-| Violation start | Deadline minute, if the dependent remains valid |
-| Horizon | Exclusive end of the analyzed interval |
-| Ongoing finding | Finding remains active until the horizon |
-| Safe | No invariant failed inside the submitted horizon |
-
-### Consequences
-
-- An object issued at minute `0` and expired at minute `60` is valid during `[0, 60)`.
-- A cache revoked at minute `10` is invalid beginning at minute `10`.
-- An event occurring exactly at the horizon cannot create a positive-duration violation beyond the horizon.
-- TimeTrap makes no claim after the configured horizon.
-
-## Frozen invariants
-
-The MVP supports exactly three invariant templates.
-
-### 1. Revoked access must end within a grace period
-
-Configuration:
-
-- Source object
-- Dependent object
-- Grace duration
-
-Meaning:
-
-When the source is revoked at minute `r`, the dependent must no longer be valid beginning at `r + grace`.
-
-Example:
-
-- Source revoked at minute 10
-- Grace duration is 5 minutes
-- Dependent remains valid until minute 60
-- Violation interval is `[15, 60)`
-
-### 2. A dependent object must not outlive its source
-
-Configuration:
-
-- Source object
-- Dependent object
-
-Meaning:
-
-The dependent must not be valid at a minute when its source is invalid.
-
-This invariant has no grace period.
-
-### 3. An object must not exceed maximum validity
-
-Configuration:
-
-- Target object
-- Maximum duration
-
-Meaning:
-
-A continuous validity segment beginning with `issue` or `refresh` must not exceed the configured maximum duration.
-
-A refresh begins a new validity segment.
-
-## Analyzer API and execution strategy
-
-### Public API
-
-The analyzer exposes one primary function:
-
-```go
-func Analyze(scenario domain.Scenario) (domain.Analysis, error)
+# TimeTrap architecture
+
+## System topology
+
+```mermaid
+flowchart TB
+    Browser[Browser]
+    Web["Zerops Static service<br/>React + TypeScript + Vite"]
+    API["Zerops Go runtime<br/>HTTP transport"]
+    Domain[Domain validation]
+    Analyzer[Pure temporal analyzer]
+    Repo[Repository interfaces]
+    PG[(Private managed PostgreSQL)]
+
+    Browser -->|HTTPS documents and assets| Web
+    Browser -->|HTTPS JSON /api/v1| API
+    API --> Domain
+    API --> Analyzer
+    API --> Repo
+    Repo -->|private Zerops network| PG
 ```
 
-The function receives a complete domain scenario and returns either:
+Only `web` and `api` have public HTTPS routes. PostgreSQL is reachable only through the project-private network.
 
-- A deterministic analysis result, or
-- An error when the model cannot be evaluated safely.
+## Frontend flow
 
-The analyzer may call `scenario.Validate()` defensively. It must not assume that every caller has already passed the scenario through the HTTP validation endpoint.
-
-An unsafe scenario is a successful analysis result, not a Go error. The error return is reserved for models that cannot be evaluated reliably.
-
-### Execution flow
+The scenario builder owns an editable draft with form-only row IDs. A single mapping function strips those IDs and produces the exact backend request contract. The persistence workflow then follows an explicit state machine:
 
 ```text
-Validate defensive assumptions
-        ↓
-Generate candidate boundaries
-        ↓
-Sort and deduplicate boundaries
-        ↓
-Evaluate every segment [boundary[i], boundary[i+1])
-        ↓
-Reduce object states at the segment start
-        ↓
-Evaluate every configured invariant
-        ↓
-Open, continue or close violation intervals
-        ↓
-Select the earliest violation deterministically
-        ↓
-Attach deterministic remediation
+validate draft → POST/PUT scenario → POST analysis → navigate to /results/{analysisId}
 ```
 
-The analyzer evaluates segments between relevant boundaries instead of checking every minute in the horizon.
+The result page reads its UUID from the route and calls `GET /api/v1/analyses/{analysisId}`. It never depends on router state and never recalculates verdicts, intervals, validity, or remediation.
 
-Candidate boundaries include:
+## API boundary
 
-- Minute `0`
-- Scenario horizon
-- Every event minute
-- The minute immediately before an event, when inside the horizon
-- The minute immediately after an event, when inside the horizon
-- Revocation plus grace duration
-- Maximum-validity deadlines
-- Expiration boundaries
+The standard-library HTTP layer provides strict JSON decoding, bounded request bodies, structured validation errors, CORS, request IDs, access logs, panic recovery, and graceful shutdown. Handlers depend on repository and analyzer interfaces rather than PostgreSQL implementation details.
 
-### Analyzer guarantees
+Every response carries a request ID. Error responses expose stable application codes and safe messages; internal PostgreSQL or Go errors remain in controlled server logs.
 
-- The submitted scenario is treated as immutable input.
-- `Analyze` must not reorder, normalize or otherwise mutate the submitted scenario.
-- Any sorting must operate on newly allocated copies.
-- The same input must always produce the same result.
-- Output ordering must not depend on Go map iteration order.
-- Missing or invalid object references produce an error, not a safe result.
-- The analyzer does not depend on HTTP, PostgreSQL or display formatting.
-- The analyzer makes no claims after the configured horizon.
+## Analyzer boundary
 
-### Why this API matters
+The analyzer is a pure Go package. It accepts a validated scenario and returns a deterministic result. It has no clock, HTTP client, database connection, or mutable global state.
 
-- `domain.Scenario` is the analyzer's input contract.
-- `domain.Analysis` is its output contract.
-- The error return distinguishes an unsafe model from a model that could not be evaluated.
-- Defensive validation protects future callers such as tests, CLI tools or background workers.
-- Input immutability makes repeated analyses reproducible.
+It derives candidate boundaries from submitted events and invariant deadlines, sorts and deduplicates them, reduces object validity at each boundary, selects the earliest counterexample deterministically, and converts failed spans into half-open intervals. Presentation-ready validity intervals and structured remediation are part of the stored result.
 
-## Analyzer limitations
+## Persistence
 
-- Time uses integer-minute resolution.
-- Analysis is bounded by the submitted horizon.
-- A safe result applies only to the submitted model.
-- Object state is simplified to valid or invalid.
-- Events are assumed to occur exactly at their configured minute.
-- The analyzer does not model network delay, clock skew or concurrent races.
-- Incorrect or incomplete input can produce an irrelevant result.
-- An ongoing violation is truncated at the horizon.
-- The analyzer does not inspect a live application.
+The repository layer stores scenario definitions as JSONB with relational metadata. An analysis record stores:
 
-## Canonical demonstration
+- its UUID and source scenario UUID;
+- an immutable scenario snapshot;
+- the complete deterministic result;
+- the engine version and creation timestamp.
 
-### Unsafe scenario
+Updating a scenario never rewrites an earlier analysis. That is why shared result URLs remain reproducible.
 
-| Setting | Value |
-| --- | --- |
-| Name | Subscription cancellation leak |
-| Horizon | 90 minutes |
-| Source | Premium subscription |
-| Source events | Issue at 0, revoke at 10 |
-| Dependent | Premium entitlement cache |
-| Dependent events | Issue at 0, expire at 60 |
-| Invariant | Revoked access must end within a grace period |
-| Grace | 5 minutes |
+## Correction flow
 
-Expected result:
+“Apply fix and rerun” clones the stored scenario snapshot, applies typed remediation operations to the clone, validates it, creates a new scenario, creates a new analysis, and navigates to the new UUID. The original scenario and unsafe analysis remain unchanged.
 
-- Verdict: unsafe
-- Source revocation: minute 10
-- Permitted deadline: minute 15
-- Stale-access interval: `[10, 60)`
-- Total stale access: 50 minutes
-- Policy-violation interval: `[15, 60)`
-- Policy-violation duration: 45 minutes
-- Responsible dependent: Premium entitlement cache
+## Deployment boundary
 
-# Architecture
-```mermaid
-flowchart LR
-    B["User browser"] -->|"HTTPS"| W["React frontend on Zerops"]
-    W -->|"JSON API"| A["Stateless Go API on Zerops"]
-    A --> E["Pure temporal analyzer"]
-    A -->|"Private network"| P["Managed PostgreSQL"]
-    E --> A
-```
+Zerops Static serves the compiled frontend. The Go runtime reads its port, database reference, CORS allowlist, timeouts, and log settings from environment configuration. Goose migrations are explicit and forward-only; normal application startup does not mutate the schema.

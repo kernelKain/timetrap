@@ -2,443 +2,113 @@
 
 **Find the minute trust outlives truth.**
 
-TimeTrap is a design-time verifier that finds intervals where cached entitlements, sessions, tokens, or other authorization copies remain valid after their source authorization has been revoked.
+TimeTrap is a deterministic verifier that finds periods where dependent authorization state remains valid after its source authority has been revoked.
 
-> Project status: Phase 7 — persisted findings now include presentation-ready timelines and immutable one-click remediation reruns.
+[Open TimeTrap](https://web-2b33.prg1.zerops.app) · [Unsafe example](https://web-2b33.prg1.zerops.app/results/d28ecf3d-e28a-4538-a74c-d88d791d57fe) · [Corrected example](https://web-2b33.prg1.zerops.app/results/1998c072-7095-4d5f-a45f-7a520a3d62c8) · [API health](https://api-2b33-8080.prg1.zerops.app/api/v1/health)
 
 ## The problem
 
-Modern authorization state is rarely stored in only one place.
-
-A subscription might be stored in PostgreSQL while access is also represented by:
-
-- A cached premium entitlement
-- An application session
-- An access or refresh token
-- A browser or CDN cache
-- A third-party identity provider
-- A delayed background synchronization process
-
-These copies expire and refresh independently. Revoking the source record does not necessarily invalidate every previously issued copy.
-
-Each component can appear correctly configured while the complete system still permits access for too long.
+Revoking a source authority does not necessarily invalidate every cached entitlement, session, or token derived from it. Independent expiration and refresh schedules create a measurable interval where stale access remains active—a timing flaw that conventional static checks can miss.
 
 ## What TimeTrap does
 
-A user describes a bounded authorization model containing:
+- Models source and dependent authorization objects on a bounded timeline.
+- Accepts `issue`, `refresh`, `revoke`, and `expire` events at integer-minute boundaries.
+- Evaluates three predefined temporal invariants with a pure Go analyzer.
+- Generates and sorts only meaningful boundary candidates instead of checking every minute.
+- Returns the earliest counterexample, exact half-open interval, evidence, and deterministic remediation.
+- Persists scenario snapshots and analyses under durable, shareable result URLs.
+- Applies supported corrections to a new scenario copy, preserving the original result.
 
-- Timed objects
-- State-changing events
-- A simulation horizon
-- One or more predefined temporal invariants
+## Try it
 
-TimeTrap deterministically evaluates the relevant boundary moments and returns:
+1. [Open TimeTrap](https://web-2b33.prg1.zerops.app).
+2. Choose **Try subscription cancellation**.
+3. Select **Save and analyze**.
+4. Inspect the violation interval, timeline, evidence, and proposed correction.
+5. Select **Apply fix and rerun** to create a corrected scenario and safe result.
 
-- Whether the submitted model is safe or unsafe
-- The earliest violation
-- The exact violation interval
-- The violation duration
-- The objects and events responsible
-- The invariant that failed
-- A deterministic configuration-level remediation
+See the [product tour](docs/product-tour.md) for a field-by-field walkthrough.
 
-The same input always produces the same result.
+## Verified result
 
-## Canonical demonstration
+| Scenario | Result | Interval | Meaning |
+| --- | --- | --- | --- |
+| Original subscription cancellation | Unsafe | Stale `[10,60)`; violation `[15,60)` | Cached access remains active for 50 minutes after revocation and exceeds the five-minute grace by 45 minutes. |
+| Corrected copy | Safe | No violation within 90 minutes | Revoking the cache at minute 10 removes the exposure while preserving the later expiry event. |
 
-The primary demonstration models subscription cancellation:
-
-| Item | Configuration |
-| --- | --- |
-| Simulation horizon | 90 minutes |
-| Subscription | Issued at minute 0 and revoked at minute 10 |
-| Cached entitlement | Issued at minute 0 and expires at minute 60 |
-| Policy | Cached access must end within 5 minutes of revocation |
-| Policy deadline | Minute 15 |
-| Stale-access interval | `[10, 60)` |
-| Total stale access | 50 minutes |
-| Policy-violation interval | `[15, 60)` |
-| Policy-violation duration | 45 minutes |
-
-The five minutes between minute 10 and minute 15 are permitted by the configured grace period. Therefore, the policy violation lasts 45 minutes even though the cached authorization remains stale for 50 minutes in total.
-
-The corrected scenario actively revokes the cached entitlement when the subscription is revoked. Running the same analysis then produces a safe result.
-
-## MVP
-
-The hackathon MVP will allow users to:
-
-1. Load a built-in demonstration template.
-2. Create or edit a bounded authorization timeline.
-3. Add supported objects and events.
-4. Select a predefined invariant.
-5. Run deterministic analysis.
-6. View the earliest violation on a multi-lane timeline.
-7. Inspect evidence explaining the violation.
-8. Apply a suggested configuration-level correction.
-9. Rerun the analysis and verify the corrected model.
-10. Open and share a persistent analysis URL.
-
-## Supported model
-
-### Objects
-
-- Subscription
-- Cached entitlement
-- Session
-- Token
-- Invitation
-- Credential
-
-### Events
-
-- Issue
-- Refresh
-- Revoke
-- Expire
-
-### Invariants
-
-1. Revoked access must end within a configured grace period.
-2. A dependent object must not outlive its source.
-3. An object must not remain valid longer than a configured maximum.
-
-TimeTrap does not include a general-purpose temporal-logic language during the hackathon.
+These are persisted server results, not frontend fixtures: [open the unsafe analysis](https://web-2b33.prg1.zerops.app/results/d28ecf3d-e28a-4538-a74c-d88d791d57fe) and [open the corrected analysis](https://web-2b33.prg1.zerops.app/results/1998c072-7095-4d5f-a45f-7a520a3d62c8).
 
 ## Architecture
 
-```text
-User browser
-    |
-    | HTTPS and JSON
-    v
-React + TypeScript frontend on Zerops
-    |
-    v
-Stateless Go API on Zerops
-    |                       |
-    v                       v
-Pure temporal analyzer   Managed PostgreSQL
-                         over a private network
+```mermaid
+flowchart LR
+    Browser[Browser] -->|HTTPS| Web["Zerops Static<br/>React + Vite"]
+    Browser -->|JSON over HTTPS| API[Zerops Go API]
+    API --> Analyzer[Pure deterministic analyzer]
+    API -->|Private network| DB[(Managed PostgreSQL)]
 ```
 
-The analyzer is a pure Go package with no HTTP or database dependency.
+The analyzer has no HTTP or database dependency. The API owns validation and orchestration; PostgreSQL stores scenario definitions and immutable analysis snapshots. See [architecture](docs/architecture.md).
 
-PostgreSQL stores complete scenario definitions and immutable analysis snapshots. HTTP handlers depend only on repository interfaces and do not know about pgx or PostgreSQL implementation details.
+## Technical highlights
 
-## Current implementation
+- Pure, deterministic boundary-based analyzer with stable ordering.
+- Exact earliest-counterexample selection and half-open intervals.
+- Strict JSON decoding, bounded validation, and stable field paths.
+- Safe structured errors, request IDs, panic recovery, and structured logs.
+- PostgreSQL persistence with explicit forward migrations.
+- Immutable historical snapshots and direct result retrieval by UUID.
+- Typed React API client with cancellation, timeouts, and stage-aware retry.
+- Responsive shared-scale timelines and machine-actionable remediation.
 
-Phase 7 provides:
+## Zerops deployment
 
-- A responsive React, TypeScript, Vite, and Tailwind scenario experience
-- Immutable subscription-cancellation and account-suspension templates
-- Controlled object, event, and invariant editors with backend-compatible validation
-- A custom scenario timeline and server-backed persisted result experience
-- Declarative landing, builder, `/results/{analysisId}`, and not-found routes
-- A typed fetch client with structured errors, cancellation, and request timeouts
-- A retry-aware create/update/analyze submission state machine
-- Durable analysis URLs that reload from PostgreSQL without router state
-- Server-normalized validity intervals and structured remediation operations
-- A five-second result hierarchy with evidence-first unsafe and polished safe states
-- Immutable “Apply fix and rerun” that creates a corrected scenario copy
-- A standard-library Go HTTP API
-- Strict JSON decoding and bounded domain validation
-- Request IDs and structured logs
-- Panic recovery and CORS middleware
-- Graceful HTTP and database shutdown
-- A pure deterministic temporal analyzer
-- Earliest half-open violation intervals
-- Deterministic remediation suggestions
-- PostgreSQL-backed scenario creation, retrieval, and updates
-- Persistent analysis reports with immutable scenario snapshots
-- Explicit Goose migrations
-- Database-aware health checks
-- Isolated handler tests using fake repositories
-- Build-tagged PostgreSQL integration tests
+The React/Vite production bundle is built and served by Zerops Static. A separate Zerops Go runtime hosts `/api/v1`; PostgreSQL is a private managed service with no public route. HTTPS routing exposes only the web and API services. Build-time API origin, runtime database reference, strict CORS origin, health probes, logs, and deployment verification are managed through Zerops and ZCP.
 
-Stored analysis reports use the scenario snapshot captured when analysis ran. Updating the scenario later does not alter an earlier report.
+## Technology
 
-## API
+Go · React · TypeScript · Vite · Tailwind CSS · PostgreSQL · Goose · Zerops · OpenAI Codex · ZCP
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/health` | Report API and database readiness |
-| `POST` | `/api/v1/scenarios/validate` | Validate without storing a scenario |
-| `POST` | `/api/v1/scenarios` | Validate and persist a scenario |
-| `GET` | `/api/v1/scenarios/{scenarioId}` | Retrieve a stored scenario |
-| `PUT` | `/api/v1/scenarios/{scenarioId}` | Replace a stored scenario definition |
-| `POST` | `/api/v1/scenarios/{scenarioId}/analyses` | Analyze and persist a scenario snapshot |
-| `GET` | `/api/v1/analyses/{analysisId}` | Retrieve a persistent analysis report |
+## Local quick start
 
-### Error contract
-
-API errors use a stable JSON envelope containing:
-
-- A machine-readable error code
-- A safe client-facing message
-- Optional validation fields
-- A request ID
-
-Internal analyzer, PostgreSQL, hostname, SQL, and credential details are never returned to clients.
-
-## Persistence
-
-Scenarios are stored as JSONB alongside relational metadata.
-
-Analysis records store:
-
-- Analysis UUID
-- Original scenario UUID
-- Immutable scenario snapshot
-- Safe or unsafe verdict
-- Complete analysis result
-- Analyzer engine version
-- Creation timestamp
-
-The snapshot ensures that an old analysis remains reproducible after its scenario is updated.
-
-PostgreSQL migrations are explicit. The API never runs migrations automatically.
-
-## Requirements
-
-- Node.js 20.19+ or 22.12+
-- npm
-- Go 1.25+
-- PostgreSQL 16
-- Goose v3 as a separate migration CLI
-
-Install Goose:
-
-```bash
-go install github.com/pressly/goose/v3/cmd/goose@latest
-```
-
-Ensure the Go binary directory is available:
-
-```bash
-export PATH="$(go env GOPATH)/bin:$PATH"
-```
-
-## Local development
-
-Install frontend dependencies:
-
-```bash
-npm --prefix frontend install
-```
-
-Verify that local environment files are ignored:
-
-```bash
-git check-ignore .env
-```
-
-Expected:
-
-```text
-.env
-```
-
-Create an ignored local environment file:
+Requirements: Go 1.25, Node.js 20.19+ or 22.12+, npm, PostgreSQL 16, and Goose v3.
 
 ```bash
 cp .env.example .env
-```
-
-Replace the example database URL only inside the ignored `.env` file. Never commit a real connection string.
-
-The backend configuration includes:
-
-- `DATABASE_URL`
-- `DATABASE_MAX_CONNS`
-- `DATABASE_MIN_CONNS`
-- `DATABASE_CONNECT_TIMEOUT`
-- `DATABASE_QUERY_TIMEOUT`
-
-### Apply migrations
-
-Load the ignored environment inside a temporary subshell and apply migrations explicitly:
-
-```bash
-(
-  set +x
-  set -a
-  source .env
-  set +a
-
-  export GOOSE_DRIVER=postgres
-  export GOOSE_DBSTRING="$DATABASE_URL"
-
-  goose -dir backend/migrations status
-  goose -dir backend/migrations up
-  goose -dir backend/migrations status
-)
-```
-
-The environment variables disappear when the subshell exits.
-
-Use `goose down` only with a disposable development or test database and only when intentionally destroying its tables.
-
-### Start the API
-
-Load the ignored local configuration and start the API:
-
-```bash
-(
-  set +x
-  set -a
-  source .env
-  set +a
-
-  go -C backend run ./cmd/api
-)
-```
-
-The development API uses:
-
-```text
-http://localhost:8080
-```
-
-Test database readiness:
-
-```bash
-curl http://localhost:8080/api/v1/health
-```
-
-A healthy response reports:
-
-```json
-{
-  "status": "ok",
-  "service": "timetrap-api",
-  "database": "connected",
-  "timestamp": "..."
-}
-```
-
-If PostgreSQL is unavailable, health returns HTTP `503` with:
-
-```json
-{
-  "status": "degraded",
-  "service": "timetrap-api",
-  "database": "unavailable",
-  "timestamp": "..."
-}
-```
-
-Database errors, credentials, and hostnames are never included.
-
-### Start the frontend
-
-In another terminal:
-
-```bash
+npm --prefix frontend ci
+go -C backend test ./...
+npm --prefix frontend run test
+go -C backend run ./cmd/api
 npm --prefix frontend run dev
 ```
 
-Open:
+Configure the ignored `.env` before starting the API or applying migrations. Full setup and safe migration commands are in [local development](docs/local-development.md).
 
-```text
-http://localhost:5173
-```
+## AI usage
 
-The frontend reads its API URL from `VITE_API_BASE_URL`. The backend accepts exact
-comma-separated browser origins from `CORS_ALLOWED_ORIGINS`; wildcard origins and
-empty list entries are rejected.
+OpenAI Codex assisted with planning, implementation, tests, documentation, deployment configuration, and verification. Generated work was reviewed through source inspection, automated tests, production builds, live API calls, and browser checks. See [AI usage](docs/ai-usage.md).
 
-Never commit `.env`, `.env.local`, `.mcp.json`, `.zcp/`, access tokens, database credentials, or resolved Zerops references.
+## Documentation
 
-## Remote ZCP development
+- [Product tour](docs/product-tour.md)
+- [Architecture](docs/architecture.md)
+- [Local development](docs/local-development.md)
+- [API](docs/api.md)
+- [Deployment](docs/deployment.md)
+- [Testing](docs/testing.md)
+- [AI usage](docs/ai-usage.md)
+- [Limitations](docs/limitations.md)
 
-The ZCP workspace provides:
+## Limitations
 
-- Browser VS Code
-- Codex
-- Project-scoped ZCP access
-- Private connectivity to managed PostgreSQL
-- Development and staging Go services
+- A result applies only to the submitted model and finite horizon.
+- Time is modeled at integer-minute resolution using simplified valid/invalid object state.
+- Public result UUIDs are shareable; the current product has no authentication or ownership controls.
+- Remediation is limited to predefined deterministic operations and never changes production systems.
 
-Database credentials must be supplied through unresolved Zerops service references and temporary process environments. Do not print or persist resolved values.
+See [limitations](docs/limitations.md) for the complete boundary of the model.
 
-The backend requires Go 1.25. Zerops `appdev` and `appstage` must use `alpine/golang@latest` before this module is deployed. Do not deploy it to the older `go@1.22` runtime.
+## License
 
-Runtime upgrades and deployments require explicit approval.
-
-PostgreSQL must remain private and must not receive a public subdomain.
-
-Runtime-local files and process state are not persistent. PostgreSQL is the persistence boundary.
-
-## Verification
-
-### Backend
-
-Format and run unit tests:
-
-```bash
-go -C backend fmt ./...
-go -C backend test ./...
-go -C backend vet ./...
-```
-
-Check patch formatting:
-
-```bash
-git diff --check
-```
-
-### PostgreSQL integration test
-
-PostgreSQL integration tests are build-tagged and must use an isolated database named exactly `timetrap_test`.
-
-Apply migrations explicitly to the isolated test database before running the test.
-
-Supply `TEST_DATABASE_URL` securely through the process environment, then run:
-
-```bash
-go -C backend test \
-  -tags=integration \
-  ./internal/store/postgres \
-  -run '^TestPostgresPersistenceIntegration$' \
-  -count=1 \
-  -v
-```
-
-The integration test:
-
-- Skips when `TEST_DATABASE_URL` is absent
-- Refuses to run unless the parsed database name is exactly `timetrap_test`
-- Creates uniquely identified records
-- Deletes only the scenario created by that test
-- Uses the foreign key’s `ON DELETE CASCADE` behavior for its analysis
-- Verifies persistence after closing and reopening the pool
-
-Never run integration tests against production or the shared development database.
-
-### Frontend
-
-```bash
-npm --prefix frontend run lint
-npm --prefix frontend run test
-npm --prefix frontend run build
-```
-
-## Known limitations
-
-- TimeTrap verifies a submitted design model, not a live application.
-- A safe result applies only to the configured model and simulation horizon.
-- Time uses integer-minute resolution; clock skew, network latency, and concurrent races are not modeled.
-- Timed objects use a simplified valid/invalid state.
-- Incorrect or incomplete input can produce irrelevant results.
-- Public UUID result links are shareable, not private; the MVP has no authentication or ownership controls.
-- Automatic remediation supports only predefined deterministic operations.
-- TimeTrap does not automatically modify production configuration.
-
-## AI assistance
-
-Codex assisted with phased planning, implementation guidance, debugging, test design, security review, documentation, the Phase 5 interface, the Phase 6 persisted workflow, the Phase 7 temporal findings and remediation experience, and the Phase 8 behavior-freeze verification suite.
-
-Zerops Control Plane was used for read-only project discovery, approval-gated database creation, explicit migrations, and isolated integration-test execution.
-
-Commands, infrastructure mutations, and acceptance checks were manually approved and reviewed.
+[MIT](LICENSE)

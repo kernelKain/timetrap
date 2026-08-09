@@ -1,5 +1,13 @@
 import type { EventDraft, ScenarioDraft } from '../types/forms'
-export const positionForMinute = (minute: number, horizon: number | '') => Math.min(100, Math.max(0, horizon === '' || horizon <= 0 ? 0 : (minute / horizon) * 100))
+export const minuteToPercent = (minute: number, horizon: number) => horizon <= 0 ? 0 : Math.min(100, Math.max(0, (minute / horizon) * 100))
+export const intervalToPosition = (start: number, end: number, horizon: number) => {
+  const left = minuteToPercent(start, horizon); const right = minuteToPercent(end, horizon)
+  const round = (value: number) => Math.round(value * 1_000_000) / 1_000_000
+  return { left: `${round(left)}%`, width: `${round(Math.max(0, right - left))}%` }
+}
+export const formatDuration = (minutes: number) => `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
+export const formatInterval = (start: number, end: number, ongoing = false) => ongoing ? `[${start},${end}) — continues to simulation horizon` : `[${start},${end})`
+export const positionForMinute = (minute: number, horizon: number | '') => minuteToPercent(minute, horizon === '' ? 0 : horizon)
 export const sortedEvents = (events: EventDraft[]) => [...events].sort((a, b) => (a.atMinute === '' ? Infinity : a.atMinute) - (b.atMinute === '' ? Infinity : b.atMinute))
 export function validitySegments(events: EventDraft[], horizon: ScenarioDraft['horizonMinutes']) {
   if (horizon === '') return []

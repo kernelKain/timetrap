@@ -1,0 +1,2 @@
+import { CheckCircle2, XCircle } from 'lucide-react'
+export function Toast({ kind, message }: { kind: 'success' | 'error'; message: string }) { return <div className={`toast ${kind}`} role={kind === 'success' ? 'status' : 'alert'} aria-live={kind === 'success' ? 'polite' : 'assertive'}>{kind === 'success' ? <CheckCircle2 aria-hidden="true" /> : <XCircle aria-hidden="true" />}<span>{message}</span></div> }

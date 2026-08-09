@@ -60,7 +60,7 @@ func TestAnalysisFromIntervalsSelectsEarliestDeterministically(t *testing.T) {
 	originalBoundaries := append([]int(nil), boundaries...)
 	originalViolations := append([]domain.Violation(nil), violations...)
 
-	analysis := analysisFromIntervals(boundaries, violations)
+	analysis := analysisFromIntervals(boundaries, violations, nil)
 
 	if analysis.Safe {
 		t.Fatal("Safe = true, want false")
@@ -132,6 +132,7 @@ func TestAnalysisFromIntervalsReturnsSafeResult(t *testing.T) {
 	analysis := analysisFromIntervals(
 		boundaries,
 		[]domain.Violation{},
+		nil,
 	)
 
 	if !analysis.Safe {
@@ -176,6 +177,7 @@ func TestAnalysisFromIntervalsCopiesBoundaries(t *testing.T) {
 	analysis := analysisFromIntervals(
 		boundaries,
 		[]domain.Violation{},
+		nil,
 	)
 
 	boundaries[1] = 50

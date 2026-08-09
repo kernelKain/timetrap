@@ -8,7 +8,7 @@ import { TimelinePreview } from '../components/timeline/TimelinePreview'
 import { FieldError } from '../components/ui/FieldError'
 import { loadTemplate } from '../data/templates'
 import { ApiError, createAnalysis, createScenario, updateScenario } from '../lib/api'
-import { blankScenario, createInvariant, createObject, parseNumber, scenarioFingerprint, toScenarioRequest } from '../lib/scenario'
+import { blankScenario, cloneScenario, createInvariant, createObject, parseNumber, scenarioFingerprint, toScenarioRequest } from '../lib/scenario'
 import { validateScenario } from '../lib/validation'
 import type { ScenarioDraft } from '../types/forms'
 
@@ -18,11 +18,12 @@ interface SubmissionState { stage: SubmissionStage; scenarioId?: string; fingerp
 export function ScenarioPage() {
   const [params] = useSearchParams(); const templateId = params.get('template'); const navigate = useNavigate(); const location = useLocation()
   const initialTemplate = templateId ? loadTemplate(templateId) : null
-  const [scenario, setScenario] = useState<ScenarioDraft>(() => initialTemplate ?? blankScenario())
+  const routedDraft = (location.state as { scenarioDraft?: ScenarioDraft } | null)?.scenarioDraft
+  const [scenario, setScenario] = useState<ScenarioDraft>(() => routedDraft ? cloneScenario(routedDraft) : initialTemplate ?? blankScenario())
   const [touched, setTouched] = useState<Set<string>>(new Set()); const [attempted, setAttempted] = useState(false); const [unknownTemplate, setUnknownTemplate] = useState(Boolean(templateId && !initialTemplate)); const lastLocation = useRef(location.search)
   const [serverErrors, setServerErrors] = useState<Array<{ field: string; message: string }>>([])
   const [submission, setSubmission] = useState<SubmissionState>({ stage: 'idle' }); const inFlight = useRef(false); const activeController = useRef<AbortController | null>(null); const mounted = useRef(true)
-  useEffect(() => () => { mounted.current = false; activeController.current?.abort() }, [])
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; activeController.current?.abort() } }, [])
   useEffect(() => {
     if (lastLocation.current === location.search) return
     lastLocation.current = location.search; const nextId = new URLSearchParams(location.search).get('template'); const next = nextId ? loadTemplate(nextId) : blankScenario()

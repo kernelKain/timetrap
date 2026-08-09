@@ -1,0 +1,3 @@
+import { ArrowLeft, RefreshCw, TriangleAlert } from 'lucide-react'
+import { Link } from 'react-router'
+export function ErrorState({ title, message, requestId, retry }: { title: string; message: string; requestId?: string; retry?: () => void }) { return <div className="page-container not-found result-state"><TriangleAlert aria-hidden="true" /><p className="eyebrow">Persisted result</p><h1>{title}</h1><p>{message}</p>{requestId && <small>Request ID: <code>{requestId}</code></small>}<div className="state-actions">{retry && <button className="button primary" onClick={retry}><RefreshCw aria-hidden="true" /> Retry</button>}<Link className="button secondary" to="/scenario/new"><ArrowLeft aria-hidden="true" /> Return to builder</Link></div></div> }

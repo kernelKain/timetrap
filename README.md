@@ -4,7 +4,7 @@
 
 TimeTrap is a design-time verifier that finds intervals where cached entitlements, sessions, tokens, or other authorization copies remain valid after their source authorization has been revoked.
 
-> Project status: Phase 6 — the scenario builder persists models, runs server analysis, and opens durable result URLs.
+> Project status: Phase 7 — persisted findings now include presentation-ready timelines and immutable one-click remediation reruns.
 
 ## The problem
 
@@ -128,7 +128,7 @@ PostgreSQL stores complete scenario definitions and immutable analysis snapshots
 
 ## Current implementation
 
-Phase 6 provides:
+Phase 7 provides:
 
 - A responsive React, TypeScript, Vite, and Tailwind scenario experience
 - Immutable subscription-cancellation and account-suspension templates
@@ -138,6 +138,9 @@ Phase 6 provides:
 - A typed fetch client with structured errors, cancellation, and request timeouts
 - A retry-aware create/update/analyze submission state machine
 - Durable analysis URLs that reload from PostgreSQL without router state
+- Server-normalized validity intervals and structured remediation operations
+- A five-second result hierarchy with evidence-first unsafe and polished safe states
+- Immutable “Apply fix and rerun” that creates a corrected scenario copy
 - A standard-library Go HTTP API
 - Strict JSON decoding and bounded domain validation
 - Request IDs and structured logs
@@ -423,7 +426,7 @@ npm --prefix frontend run build
 
 ## AI assistance
 
-Codex assisted with phased planning, implementation guidance, debugging, test design, security review, documentation, the Phase 5 interface, and the Phase 6 persisted frontend/backend workflow.
+Codex assisted with phased planning, implementation guidance, debugging, test design, security review, documentation, the Phase 5 interface, the Phase 6 persisted workflow, and the Phase 7 temporal findings and remediation experience.
 
 Zerops Control Plane was used for read-only project discovery, approval-gated database creation, explicit migrations, and isolated integration-test execution.
 

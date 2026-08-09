@@ -36,6 +36,10 @@ func attachRemediations(
 		}
 
 		result[violationIndex].Remediation = remediation
+		attachFindingDetails(
+			scenario,
+			&result[violationIndex],
+		)
 	}
 
 	return result, nil
@@ -84,7 +88,7 @@ func remediationForViolation(
 	case domain.InvariantTypeMaxValidity:
 		return maximumValidityRemediation(
 			invariant,
-			violation.InvariantIndex,
+			violation,
 		)
 
 	default:
@@ -128,12 +132,19 @@ func revocationGraceRemediation(
 	}
 
 	suggestedMinute := sourceState.LastEventMinute
+	event := domain.Event{Type: domain.EventTypeRevoke, AtMinute: suggestedMinute}
 
 	return domain.Remediation{
 		Code:             remediationCodeInvalidateDependentOnSourceRevoke,
-		Summary:          "invalidate dependent when source is revoked",
+		Title:            "Invalidate the dependent authorization",
+		Summary:          "Revoke the dependent when the source is revoked.",
 		ObjectID:         invariant.DependentObjectID,
 		SuggestedMinutes: &suggestedMinute,
+		Operations: []domain.RemediationOperation{{
+			Type:     domain.RemediationOperationAddEvent,
+			ObjectID: invariant.DependentObjectID,
+			Event:    &event,
+		}},
 	}, nil
 }
 
@@ -155,26 +166,36 @@ func dependentOutlivesSourceRemediation(
 	// is no submitted invalidation event, so the bounded violation start is the
 	// deterministic alignment minute.
 	suggestedMinute := violation.StartMinute
+	eventType := domain.EventTypeExpire
 
 	if !sourceState.Valid && sourceState.HasLastEvent {
 		switch sourceState.LastEventType {
 		case domain.EventTypeRevoke, domain.EventTypeExpire:
 			suggestedMinute = sourceState.LastEventMinute
+			eventType = sourceState.LastEventType
 		}
 	}
+	event := domain.Event{Type: eventType, AtMinute: suggestedMinute}
 
 	return domain.Remediation{
 		Code:             remediationCodeAlignDependentWithSource,
-		Summary:          "align dependent validity with source",
+		Title:            "Align dependent authorization with its source",
+		Summary:          "Invalidate the dependent when its source becomes invalid.",
 		ObjectID:         invariant.DependentObjectID,
 		SuggestedMinutes: &suggestedMinute,
+		Operations: []domain.RemediationOperation{{
+			Type:     domain.RemediationOperationAddEvent,
+			ObjectID: invariant.DependentObjectID,
+			Event:    &event,
+		}},
 	}, nil
 }
 
 func maximumValidityRemediation(
 	invariant domain.Invariant,
-	invariantIndex int,
+	violation domain.Violation,
 ) (domain.Remediation, error) {
+	invariantIndex := violation.InvariantIndex
 	if invariant.MaximumMinutes == nil {
 		return domain.Remediation{}, fmt.Errorf(
 			"invariant %d is missing maximumMinutes",
@@ -190,13 +211,51 @@ func maximumValidityRemediation(
 	}
 
 	suggestedMaximum := *invariant.MaximumMinutes
+	event := domain.Event{Type: domain.EventTypeExpire, AtMinute: violation.StartMinute}
 
 	return domain.Remediation{
 		Code:             remediationCodeReduceMaximumValidity,
-		Summary:          "reduce target validity to configured maximum",
+		Title:            "End validity at the configured maximum",
+		Summary:          "Expire the target when its maximum validity is reached.",
 		ObjectID:         invariant.TargetObjectID,
 		SuggestedMinutes: &suggestedMaximum,
+		Operations: []domain.RemediationOperation{{
+			Type:     domain.RemediationOperationAddEvent,
+			ObjectID: invariant.TargetObjectID,
+			Event:    &event,
+		}},
 	}, nil
+}
+
+func attachFindingDetails(scenario domain.Scenario, violation *domain.Violation) {
+	if violation.InvariantIndex < 0 || violation.InvariantIndex >= len(scenario.Invariants) {
+		return
+	}
+
+	invariant := scenario.Invariants[violation.InvariantIndex]
+	if invariant.Type != domain.InvariantTypeRevokedAccessGrace || invariant.GraceMinutes == nil {
+		return
+	}
+
+	states := statesAt(scenario.Objects, violation.StartMinute)
+	source, exists := states[invariant.SourceObjectID]
+	if !exists || source.Valid || !source.HasLastEvent || source.LastEventType != domain.EventTypeRevoke {
+		return
+	}
+
+	sourceMinute := source.LastEventMinute
+	deadline := sourceMinute + *invariant.GraceMinutes
+	grace := *invariant.GraceMinutes
+	violation.SourceInvalidatedMinute = &sourceMinute
+	violation.PolicyDeadlineMinute = &deadline
+	violation.GraceMinutes = &grace
+
+	if !violation.Ongoing {
+		dependentMinute := violation.EndMinute
+		staleExposure := dependentMinute - sourceMinute
+		violation.DependentInvalidatedMinute = &dependentMinute
+		violation.TotalStaleExposureMinutes = &staleExposure
+	}
 }
 
 func remediationSourceState(

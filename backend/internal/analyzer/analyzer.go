@@ -75,7 +75,9 @@ func Analyze(scenario domain.Scenario) (domain.Analysis, error) {
 		)
 	}
 
-	return analysisFromIntervals(boundaries, violations), nil
+	timeline := buildTimeline(scenario)
+
+	return analysisFromIntervals(boundaries, violations, timeline), nil
 }
 
 // analysisFromIntervals builds the deterministic public analysis result.
@@ -84,6 +86,7 @@ func Analyze(scenario domain.Scenario) (domain.Analysis, error) {
 func analysisFromIntervals(
 	boundaries []int,
 	violations []domain.Violation,
+	timeline []domain.TimelineLane,
 ) domain.Analysis {
 	resultBoundaries := make([]int, len(boundaries))
 	copy(resultBoundaries, boundaries)
@@ -126,6 +129,7 @@ func analysisFromIntervals(
 		Safe:                len(resultViolations) == 0,
 		EvaluatedBoundaries: len(resultBoundaries),
 		Boundaries:          resultBoundaries,
+		Timeline:            timeline,
 		Violations:          resultViolations,
 		EngineVersion:       engineVersion,
 	}

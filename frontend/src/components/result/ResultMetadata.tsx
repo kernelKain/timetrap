@@ -1,0 +1,2 @@
+import type { PersistedAnalysis } from '../../types/api'
+export function ResultMetadata({ analysis }: { analysis: PersistedAnalysis }) { return <section className="result-metadata" aria-label="Analysis metadata"><span>Analysis <code>{analysis.id}</code></span><span>Scenario <code>{analysis.scenarioId}</code></span><span>Created {new Date(analysis.createdAt).toLocaleString()}</span><span>Engine {analysis.engineVersion}</span><span>{analysis.result.evaluatedBoundaries} evaluated boundaries</span></section> }

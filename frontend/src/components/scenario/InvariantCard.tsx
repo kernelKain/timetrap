@@ -1,4 +1,5 @@
-import { Trash2 } from 'lucide-react'
+import { ShieldAlert, Trash2 } from 'lucide-react'
+import { TechnicalBadge } from '../ui/TechnicalBadge'
 import type { InvariantDraft, ScenarioDraft, ValidationIssue } from '../../types/forms'
 import { parseNumber } from '../../lib/scenario'
 import { FieldError } from '../ui/FieldError'
@@ -14,8 +15,9 @@ export function InvariantCard({ invariant, index, objects, errors, onChange, onR
     return <label><span>{label}</span><select value={invariant[name]} aria-invalid={fieldErrors.length > 0} aria-describedby={fieldErrors.length ? `${id}-error` : undefined} onBlur={() => onTouch(`${prefix}.${name}`)} onChange={(e) => { onTouch(`${prefix}.${name}`); onChange({ ...invariant, [name]: e.target.value }) }}><option value="">Select an object</option>{objects.map((object) => <option key={object.clientId} value={object.clientId}>{object.name || 'Untitled object'}</option>)}</select><FieldError id={`${id}-error`} errors={fieldErrors} /></label>
   }
   return <article className="panel invariant-card">
-    <div className="card-heading"><div><p className="eyebrow">Invariant {index + 1}</p><h3>{labels[invariant.type]}</h3></div><button className="icon-button danger" type="button" onClick={onRemove} aria-label={`Remove invariant ${index + 1}`}><Trash2 aria-hidden="true" /></button></div>
+    <div className="card-heading invariant-heading"><span className="object-icon rule"><ShieldAlert /></span><div><p className="eyebrow">Policy rule {String(index + 1).padStart(2, '0')}</p><h3>{labels[invariant.type]}</h3><TechnicalBadge>{invariant.type}</TechnicalBadge></div><button className="icon-button danger" type="button" onClick={onRemove} aria-label={`Remove invariant ${index + 1}`}><Trash2 aria-hidden="true" /></button></div>
     <label><span>Invariant template</span><select value={invariant.type} onChange={(e) => onChange({ ...invariant, type: e.target.value as InvariantDraft['type'] })}><option value="revoked_access_grace">Revoked access must end within grace</option><option value="dependent_not_outlive_source">Dependent must not outlive source</option><option value="max_validity">Object maximum validity</option></select></label>
+    <p className="rule-sentence">{invariant.type === 'revoked_access_grace' ? <>When <strong>{objects.find((item) => item.clientId === invariant.sourceObjectId)?.name || 'source'}</strong> is revoked, <strong>{objects.find((item) => item.clientId === invariant.dependentObjectId)?.name || 'dependent'}</strong> must end within <code>{invariant.graceMinutes === '' ? '—' : invariant.graceMinutes} min</code>.</> : invariant.type === 'dependent_not_outlive_source' ? <><strong>{objects.find((item) => item.clientId === invariant.dependentObjectId)?.name || 'Dependent'}</strong> must not remain valid after <strong>{objects.find((item) => item.clientId === invariant.sourceObjectId)?.name || 'source'}</strong>.</> : <><strong>{objects.find((item) => item.clientId === invariant.targetObjectId)?.name || 'Target'}</strong> may remain valid for at most <code>{invariant.maximumMinutes === '' ? '—' : invariant.maximumMinutes} min</code>.</>}</p>
     <div className="form-grid three">
       {invariant.type === 'max_validity' ? <>
         {select('targetObjectId', 'Target object')}

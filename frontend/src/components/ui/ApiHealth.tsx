@@ -13,9 +13,9 @@ export function ApiHealth() {
       .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === 'AbortError')) setState({ kind: 'unavailable' }) })
     return () => controller.abort()
   }, [])
-  return <div className="health-chip" aria-live="polite">
-    {state.kind === 'checking' && <><LoaderCircle className="spin" aria-hidden="true" /> API check</>}
-    {state.kind === 'healthy' && <><CircleCheck aria-hidden="true" /> API healthy · {state.health.database}</>}
-    {state.kind === 'unavailable' && <><TriangleAlert aria-hidden="true" /> API unavailable · builder still works locally</>}
+  return <div className={`health-chip ${state.kind}`} aria-live="polite" title={state.kind === 'healthy' ? `Database: ${state.health.database}` : undefined}>
+    {state.kind === 'checking' && <><LoaderCircle className="spin" aria-hidden="true" /> Connecting</>}
+    {state.kind === 'healthy' && <><CircleCheck aria-hidden="true" /> API online</>}
+    {state.kind === 'unavailable' && <><TriangleAlert aria-hidden="true" /> API offline</>}
   </div>
 }

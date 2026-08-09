@@ -4,7 +4,7 @@
 
 TimeTrap is a design-time verifier that finds intervals where cached entitlements, sessions, tokens, or other authorization copies remain valid after their source authorization has been revoked.
 
-> Project status: Phase 4 — deterministic analysis, persistent scenarios, and immutable analysis reports.
+> Project status: Phase 5 — polished scenario modeling and static result-preview experience over the Phase 4 backend.
 
 ## The problem
 
@@ -128,9 +128,13 @@ PostgreSQL stores complete scenario definitions and immutable analysis snapshots
 
 ## Current implementation
 
-Phase 4 provides:
+Phase 5 provides:
 
-- A React, TypeScript, Vite, and Tailwind frontend shell
+- A responsive React, TypeScript, Vite, and Tailwind scenario experience
+- Immutable subscription-cancellation and account-suspension templates
+- Controlled object, event, and invariant editors with backend-compatible validation
+- A custom static timeline and clearly labelled static result preview
+- Declarative landing, builder, result-preview, and not-found routes
 - A standard-library Go HTTP API
 - Strict JSON decoding and bounded domain validation
 - Request IDs and structured logs
@@ -413,7 +417,7 @@ npm --prefix frontend run build
 
 ## AI assistance
 
-Codex assisted with phased planning, implementation guidance, debugging, test design, security review, and documentation.
+Codex assisted with phased planning, implementation guidance, debugging, test design, security review, documentation, and the Phase 5 frontend architecture, validation, responsive styling, and browser QA.
 
 Zerops Control Plane was used for read-only project discovery, approval-gated database creation, explicit migrations, and isolated integration-test execution.
 

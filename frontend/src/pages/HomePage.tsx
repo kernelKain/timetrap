@@ -6,7 +6,7 @@ export function HomePage() {
   return <>
     <section className="hero-section"><div className="page-container hero-grid"><div className="hero-copy">
       <div className="kicker"><ScanSearch aria-hidden="true" /> Authorization timing checker</div>
-      <h1>Find when access <span>lasts too long.</span></h1>
+      <h1>Find the minute <span>trust outlives truth.</span></h1>
       <p>Describe when subscriptions, caches, sessions, and tokens start and stop. TimeTrap shows the exact window where access continues after it should have ended.</p>
       <div className="hero-actions"><Link className="button primary" to="/scenario/new?template=subscription-cancellation"><Play aria-hidden="true" /> Try subscription cancellation</Link><Link className="button secondary" to="/scenario/new">Start blank scenario <ArrowRight aria-hidden="true" /></Link></div>
       <ApiHealth />

@@ -424,9 +424,20 @@ npm --prefix frontend run test
 npm --prefix frontend run build
 ```
 
+## Known limitations
+
+- TimeTrap verifies a submitted design model, not a live application.
+- A safe result applies only to the configured model and simulation horizon.
+- Time uses integer-minute resolution; clock skew, network latency, and concurrent races are not modeled.
+- Timed objects use a simplified valid/invalid state.
+- Incorrect or incomplete input can produce irrelevant results.
+- Public UUID result links are shareable, not private; the MVP has no authentication or ownership controls.
+- Automatic remediation supports only predefined deterministic operations.
+- TimeTrap does not automatically modify production configuration.
+
 ## AI assistance
 
-Codex assisted with phased planning, implementation guidance, debugging, test design, security review, documentation, the Phase 5 interface, the Phase 6 persisted workflow, and the Phase 7 temporal findings and remediation experience.
+Codex assisted with phased planning, implementation guidance, debugging, test design, security review, documentation, the Phase 5 interface, the Phase 6 persisted workflow, the Phase 7 temporal findings and remediation experience, and the Phase 8 behavior-freeze verification suite.
 
 Zerops Control Plane was used for read-only project discovery, approval-gated database creation, explicit migrations, and isolated integration-test execution.
 

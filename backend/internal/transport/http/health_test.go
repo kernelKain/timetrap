@@ -153,6 +153,33 @@ func TestHealthRouteUnavailable(t *testing.T) {
 	}
 }
 
+func TestHealthRouteCheckerHonorsTimeout(t *testing.T) {
+	handler := newHealthTestRouter(func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+	started := time.Now()
+	handler.ServeHTTP(recorder, request)
+
+	if elapsed := time.Since(started); elapsed < 900*time.Millisecond || elapsed > 2*time.Second {
+		t.Fatalf("health timeout completed in %s, want approximately one second", elapsed)
+	}
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, recorder.Code)
+	}
+
+	var response healthResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+	if response.Status != "degraded" || response.Database != "unavailable" {
+		t.Fatalf("unexpected timed-out response: %#v", response)
+	}
+}
+
 func TestHealthRouteWithoutCheckerIsUnavailable(t *testing.T) {
 	handler := newHealthTestRouter(nil)
 

@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ApiError, createScenario, getAnalysis, normalizeApiBaseUrl, setFetchImplementationForTests } from '../src/lib/api.ts'
+import { ApiError, apiBaseUrl, createScenario, getAnalysis, normalizeApiBaseUrl, setFetchImplementationForTests } from '../src/lib/api.ts'
 
 const scenario = { name: 'Test', horizonMinutes: 10, objects: [{ clientId: 'a', name: 'A', kind: 'session', events: [{ type: 'issue', atMinute: 0 }] }], invariants: [{ type: 'max_validity', targetObjectId: 'a', maximumMinutes: 5 }] }
 const scenarioEnvelope = { scenario: { id: '00000000-0000-4000-8000-000000000001', definition: scenario, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }, requestId: 'request-1' }
 const jsonResponse = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 
 test.afterEach(() => setFetchImplementationForTests())
+test('does not silently fall back to a localhost production API', () => assert.equal(apiBaseUrl, ''))
 test('normalizes one or many trailing slashes', () => assert.equal(normalizeApiBaseUrl(' http://localhost:8080/// '), 'http://localhost:8080'))
 test('rejects unusable API base URLs', () => assert.throws(() => normalizeApiBaseUrl('/api'), /absolute HTTP URL/))
 test('decodes successful JSON', async () => { setFetchImplementationForTests(async () => jsonResponse(scenarioEnvelope, 201)); assert.equal((await createScenario(scenario)).scenario.id, scenarioEnvelope.scenario.id) })

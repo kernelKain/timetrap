@@ -1,6 +1,5 @@
 import type { AnalysisResponse, ApiErrorEnvelope, ApiFieldError, HealthResponse, ScenarioRequest, ScenarioResponse } from '../types/api'
 
-const DEFAULT_API_BASE_URL = 'http://localhost:8080'
 const DEFAULT_TIMEOUT_MS = 12_000
 
 export interface RequestOptions { signal?: AbortSignal; timeoutMs?: number }
@@ -22,7 +21,8 @@ export function normalizeApiBaseUrl(value: string): string {
   return trimmed
 }
 
-export const apiBaseUrl = normalizeApiBaseUrl(import.meta.env?.VITE_API_BASE_URL || DEFAULT_API_BASE_URL)
+const configuredApiBaseUrl = import.meta.env?.VITE_API_BASE_URL?.trim()
+export const apiBaseUrl = configuredApiBaseUrl ? normalizeApiBaseUrl(configuredApiBaseUrl) : ''
 
 type Fetch = typeof fetch
 let fetchImplementation: Fetch = (...args) => fetch(...args)

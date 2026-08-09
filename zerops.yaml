@@ -1,0 +1,57 @@
+zerops:
+  - setup: api
+    build:
+      base: go@1.22
+      envVariables:
+        GOTOOLCHAIN: go1.25.0
+        CGO_ENABLED: "0"
+      buildCommands:
+        - cd backend && go test ./...
+        - cd backend && go vet ./...
+        - cd backend && mkdir -p bin && go build -trimpath -o bin/timetrap-api ./cmd/api
+        - cd backend && GOFLAGS="-tags=no_clickhouse,no_libsql,no_mssql,no_mysql,no_sqlite3,no_vertica,no_ydb" GOBIN="$PWD/bin" go install github.com/pressly/goose/v3/cmd/goose@v3.26.0
+      deployFiles:
+        - backend/bin/timetrap-api
+        - backend/bin/goose
+        - backend/migrations
+      cache:
+        - /go/pkg/mod
+    deploy:
+      readinessCheck:
+        httpGet:
+          port: 8080
+          path: /api/v1/health
+    run:
+      base: alpine@3.24
+      envVariables:
+        PORT: "8080"
+        APP_ENV: production
+        DATABASE_URL: ${db_connectionString}
+        CORS_ALLOWED_ORIGINS: ${web_zeropsSubdomain}
+        LOG_LEVEL: info
+        ENGINE_VERSION: v1
+      ports:
+        - port: 8080
+          httpSupport: true
+      healthCheck:
+        httpGet:
+          port: 8080
+          path: /api/v1/health
+      start: ./backend/bin/timetrap-api
+
+  - setup: web
+    build:
+      base: nodejs@24
+      envVariables:
+        VITE_API_BASE_URL: ${api_zeropsSubdomain}
+      buildCommands:
+        - npm --prefix frontend ci
+        - npm --prefix frontend run test
+        - npm --prefix frontend run lint
+        - npm --prefix frontend run build
+      deployFiles:
+        - frontend/dist/~
+      cache:
+        - frontend/node_modules
+    run:
+      base: static@1.0

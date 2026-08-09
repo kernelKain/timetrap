@@ -5,6 +5,10 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ command, mode }) => {
   const environment = loadEnv(mode, process.cwd(), '')
 
+  if (command === 'build' && !environment.VITE_API_BASE_URL?.trim()) {
+    throw new Error('VITE_API_BASE_URL must be set for production builds.')
+  }
+
   const configuredBase =
     command === 'serve'
       ? environment.VITE_DEV_PROXY_BASE?.trim() || ''

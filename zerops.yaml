@@ -11,7 +11,7 @@ zerops:
         - cd backend && mkdir -p bin && go build -trimpath -o bin/timetrap-api ./cmd/api
         - cd backend && GOFLAGS="-tags=no_clickhouse,no_libsql,no_mssql,no_mysql,no_sqlite3,no_vertica,no_ydb" GOBIN="$PWD/bin" go install github.com/pressly/goose/v3/cmd/goose@v3.26.0
       deployFiles:
-        - .
+        - frontend/dist/~
       cache:
         - /go/pkg/mod
     deploy:
@@ -53,4 +53,3 @@ zerops:
         - frontend/node_modules
     run:
       base: static@1.0
-      documentRoot: frontend/dist

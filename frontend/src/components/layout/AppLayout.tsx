@@ -13,8 +13,8 @@ export function AppLayout() {
     </div></header>
     <main><Outlet /></main>
     <footer className="site-footer"><div className="page-container footer-inner">
-      <div><strong>TimeTrap</strong><p>A design-time verifier for bounded authorization models.</p></div>
-      <p>It does not inspect live systems or prove an application is secure.</p>
+      <div><strong>TimeTrap</strong><p>Check when access may remain valid for too long.</p></div>
+      <p>TimeTrap checks the scenario you provide. It does not inspect a live application.</p>
     </div></footer>
   </div>
 }

@@ -2,7 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router'
 import { AppLayout } from './components/layout/AppLayout'
 import { HomePage } from './pages/HomePage'
 import { NotFoundPage } from './pages/NotFoundPage'
-import { ResultPreviewPage } from './pages/ResultPreviewPage'
+import { ResultPage } from './pages/ResultPage'
 import { ScenarioPage } from './pages/ScenarioPage'
 
 export default function App() {
@@ -11,7 +11,7 @@ export default function App() {
   return <BrowserRouter basename={basename}><Routes><Route element={<AppLayout />}>
     <Route index element={<HomePage />} />
     <Route path="scenario/new" element={<ScenarioPage />} />
-    <Route path="result/preview" element={<ResultPreviewPage />} />
+    <Route path="results/:analysisId" element={<ResultPage />} />
     <Route path="*" element={<NotFoundPage />} />
   </Route></Routes></BrowserRouter>
 }

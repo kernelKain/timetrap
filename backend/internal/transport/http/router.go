@@ -255,6 +255,8 @@ func corsMiddleware(
 		origin := request.Header.Get("Origin")
 
 		if origin != "" {
+			responseWriter.Header().Add("Vary", "Origin")
+
 			if _, allowed := allowedOriginSet[origin]; !allowed {
 				respondError(
 					logger,
@@ -280,7 +282,7 @@ func corsMiddleware(
 
 			responseWriter.Header().Set(
 				"Access-Control-Allow-Headers",
-				"Content-Type",
+				"Content-Type, X-Request-ID",
 			)
 
 			responseWriter.Header().Set(
@@ -288,10 +290,6 @@ func corsMiddleware(
 				"X-Request-ID",
 			)
 
-			responseWriter.Header().Add(
-				"Vary",
-				"Origin",
-			)
 		}
 
 		if request.Method == http.MethodOptions {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -78,7 +79,7 @@ func TestLoadAcceptsConfiguredValues(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("PORT", "9090")
 	t.Setenv(
-		"ALLOWED_ORIGINS",
+		"CORS_ALLOWED_ORIGINS",
 		"http://localhost:5173, https://example.test",
 	)
 	t.Setenv("LOG_LEVEL", "info")
@@ -234,13 +235,26 @@ func TestLoadRejectsInvalidDatabaseConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsInvalidCORSOrigins(t *testing.T) {
+	for _, value := range []string{"", "http://localhost:5173, ", "*"} {
+		t.Run(value, func(t *testing.T) {
+			clearConfigurationEnvironment(t)
+			t.Setenv("DATABASE_URL", "postgres://example:example@localhost:5432/example")
+			t.Setenv("CORS_ALLOWED_ORIGINS", value)
+			if _, err := Load(); err == nil {
+				t.Fatal("Load() returned nil error; want invalid CORS origins error")
+			}
+		})
+	}
+}
+
 func clearConfigurationEnvironment(t *testing.T) {
 	t.Helper()
 
 	for _, name := range []string{
 		"APP_ENV",
 		"PORT",
-		"ALLOWED_ORIGINS",
+		"CORS_ALLOWED_ORIGINS",
 		"LOG_LEVEL",
 		"ENGINE_VERSION",
 		"DATABASE_URL",
@@ -250,5 +264,8 @@ func clearConfigurationEnvironment(t *testing.T) {
 		"DATABASE_QUERY_TIMEOUT",
 	} {
 		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatalf("unset %s: %v", name, err)
+		}
 	}
 }

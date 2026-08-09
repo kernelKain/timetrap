@@ -4,7 +4,7 @@
 
 TimeTrap is a design-time verifier that finds intervals where cached entitlements, sessions, tokens, or other authorization copies remain valid after their source authorization has been revoked.
 
-> Project status: Phase 5 — polished scenario modeling and static result-preview experience over the Phase 4 backend.
+> Project status: Phase 6 — the scenario builder persists models, runs server analysis, and opens durable result URLs.
 
 ## The problem
 
@@ -128,13 +128,16 @@ PostgreSQL stores complete scenario definitions and immutable analysis snapshots
 
 ## Current implementation
 
-Phase 5 provides:
+Phase 6 provides:
 
 - A responsive React, TypeScript, Vite, and Tailwind scenario experience
 - Immutable subscription-cancellation and account-suspension templates
 - Controlled object, event, and invariant editors with backend-compatible validation
-- A custom static timeline and clearly labelled static result preview
-- Declarative landing, builder, result-preview, and not-found routes
+- A custom scenario timeline and server-backed persisted result experience
+- Declarative landing, builder, `/results/{analysisId}`, and not-found routes
+- A typed fetch client with structured errors, cancellation, and request timeouts
+- A retry-aware create/update/analyze submission state machine
+- Durable analysis URLs that reload from PostgreSQL without router state
 - A standard-library Go HTTP API
 - Strict JSON decoding and bounded domain validation
 - Request IDs and structured logs
@@ -291,13 +294,13 @@ Load the ignored local configuration and start the API:
 The development API uses:
 
 ```text
-http://localhost:8082
+http://localhost:8080
 ```
 
 Test database readiness:
 
 ```bash
-curl http://localhost:8082/api/v1/health
+curl http://localhost:8080/api/v1/health
 ```
 
 A healthy response reports:
@@ -338,7 +341,9 @@ Open:
 http://localhost:5173
 ```
 
-The frontend reads its API URL from `VITE_API_BASE_URL`.
+The frontend reads its API URL from `VITE_API_BASE_URL`. The backend accepts exact
+comma-separated browser origins from `CORS_ALLOWED_ORIGINS`; wildcard origins and
+empty list entries are rejected.
 
 Never commit `.env`, `.env.local`, `.mcp.json`, `.zcp/`, access tokens, database credentials, or resolved Zerops references.
 
@@ -412,12 +417,13 @@ Never run integration tests against production or the shared development databas
 
 ```bash
 npm --prefix frontend run lint
+npm --prefix frontend run test
 npm --prefix frontend run build
 ```
 
 ## AI assistance
 
-Codex assisted with phased planning, implementation guidance, debugging, test design, security review, documentation, and the Phase 5 frontend architecture, validation, responsive styling, and browser QA.
+Codex assisted with phased planning, implementation guidance, debugging, test design, security review, documentation, the Phase 5 interface, and the Phase 6 persisted frontend/backend workflow.
 
 Zerops Control Plane was used for read-only project discovery, approval-gated database creation, explicit migrations, and isolated integration-test execution.
 

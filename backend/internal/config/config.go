@@ -103,6 +103,14 @@ func Load() (Config, error) {
 		)
 	}
 
+	allowedOrigins, err := originListEnvironment(
+		"CORS_ALLOWED_ORIGINS",
+		defaultAllowedOrigins,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		AppEnvironment: environment(
 			"APP_ENV",
@@ -112,10 +120,7 @@ func Load() (Config, error) {
 			"PORT",
 			defaultPort,
 		),
-		AllowedOrigins: parseList(environment(
-			"ALLOWED_ORIGINS",
-			defaultAllowedOrigins,
-		)),
+		AllowedOrigins: allowedOrigins,
 		LogLevel: environment(
 			"LOG_LEVEL",
 			defaultLogLevel,
@@ -172,15 +177,24 @@ func durationEnvironment(
 	return parsed, nil
 }
 
-func parseList(value string) []string {
+func originListEnvironment(name, fallback string) ([]string, error) {
+	value, configured := os.LookupEnv(name)
+	if !configured {
+		value = fallback
+	}
+
 	values := make([]string, 0)
 
 	for _, item := range strings.Split(value, ",") {
 		item = strings.TrimSpace(item)
-		if item != "" {
-			values = append(values, item)
+		if item == "" {
+			return nil, fmt.Errorf("%s must not contain empty origins", name)
 		}
+		if item == "*" {
+			return nil, fmt.Errorf("%s must contain exact origins, not *", name)
+		}
+		values = append(values, item)
 	}
 
-	return values
+	return values, nil
 }

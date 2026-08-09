@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { CircleCheck, LoaderCircle, TriangleAlert } from 'lucide-react'
 import type { HealthResponse } from '../../types/api'
+import { getHealth } from '../../lib/api'
 
 type State = { kind: 'checking' } | { kind: 'healthy'; health: HealthResponse } | { kind: 'unavailable' }
 export function ApiHealth() {
   const [state, setState] = useState<State>({ kind: 'checking' })
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/v1/health', { headers: { Accept: 'application/json' }, signal: controller.signal })
-      .then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<HealthResponse> })
+    getHealth({ signal: controller.signal })
       .then((health) => setState(health.status === 'ok' ? { kind: 'healthy', health } : { kind: 'unavailable' }))
       .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === 'AbortError')) setState({ kind: 'unavailable' }) })
     return () => controller.abort()

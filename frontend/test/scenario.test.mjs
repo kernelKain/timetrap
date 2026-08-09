@@ -1,0 +1,7 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { scenarioFingerprint, toScenarioRequest } from '../src/lib/scenario.ts'
+
+const draft = { name: 'Boundary model', description: '', horizonMinutes: 10, objects: [{ clientId: 'session', name: 'Session', kind: 'session', events: [{ formId: 'form-only', type: 'issue', atMinute: 0 }, { formId: 'boundary', type: 'expire', atMinute: 10 }] }], invariants: [{ formId: 'invariant-only', type: 'max_validity', sourceObjectId: '', dependentObjectId: '', targetObjectId: 'session', graceMinutes: '', maximumMinutes: 10 }] }
+test('maps the draft exactly and strips form-only IDs', () => { const request = toScenarioRequest(draft); assert.deepEqual(request, { name: 'Boundary model', horizonMinutes: 10, objects: [{ clientId: 'session', name: 'Session', kind: 'session', events: [{ type: 'issue', atMinute: 0 }, { type: 'expire', atMinute: 10 }] }], invariants: [{ type: 'max_validity', targetObjectId: 'session', maximumMinutes: 10 }] }); assert.equal(JSON.stringify(request).includes('formId'), false) })
+test('fingerprints equivalent requests deterministically and notices edits', () => { const first = toScenarioRequest(draft); const second = toScenarioRequest(structuredClone(draft)); assert.equal(scenarioFingerprint(first), scenarioFingerprint(second)); second.name = 'Edited'; assert.notEqual(scenarioFingerprint(first), scenarioFingerprint(second)) })

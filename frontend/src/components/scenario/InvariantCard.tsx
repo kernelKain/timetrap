@@ -11,7 +11,7 @@ export function InvariantCard({ invariant, index, objects, errors, onChange, onR
   const field = (name: string) => errors.filter((error) => error.field === `${prefix}.${name}`)
   const select = (name: 'sourceObjectId' | 'dependentObjectId' | 'targetObjectId', label: string) => {
     const fieldErrors = field(name); const id = `${invariant.formId}-${name}`
-    return <label><span>{label}</span><select value={invariant[name]} aria-invalid={fieldErrors.length > 0} aria-describedby={fieldErrors.length ? `${id}-error` : undefined} onBlur={() => onTouch(`${prefix}.${name}`)} onChange={(e) => onChange({ ...invariant, [name]: e.target.value })}><option value="">Select an object</option>{objects.map((object) => <option key={object.clientId} value={object.clientId}>{object.name || 'Untitled object'}</option>)}</select><FieldError id={`${id}-error`} errors={fieldErrors} /></label>
+    return <label><span>{label}</span><select value={invariant[name]} aria-invalid={fieldErrors.length > 0} aria-describedby={fieldErrors.length ? `${id}-error` : undefined} onBlur={() => onTouch(`${prefix}.${name}`)} onChange={(e) => { onTouch(`${prefix}.${name}`); onChange({ ...invariant, [name]: e.target.value }) }}><option value="">Select an object</option>{objects.map((object) => <option key={object.clientId} value={object.clientId}>{object.name || 'Untitled object'}</option>)}</select><FieldError id={`${id}-error`} errors={fieldErrors} /></label>
   }
   return <article className="panel invariant-card">
     <div className="card-heading"><div><p className="eyebrow">Invariant {index + 1}</p><h3>{labels[invariant.type]}</h3></div><button className="icon-button danger" type="button" onClick={onRemove} aria-label={`Remove invariant ${index + 1}`}><Trash2 aria-hidden="true" /></button></div>
@@ -29,5 +29,5 @@ export function InvariantCard({ invariant, index, objects, errors, onChange, onR
 }
 
 function NumberField({ label, value, errors, id, min = '1', onChange, onTouch }: { label: string; value: number | ''; errors: ValidationIssue[]; id: string; min?: string; onChange: (value: number | '') => void; onTouch: () => void }) {
-  return <label><span>{label}</span><input type="number" min={min} step="1" value={value} aria-invalid={errors.length > 0} aria-describedby={errors.length ? `${id}-error` : undefined} onBlur={onTouch} onChange={(e) => onChange(parseNumber(e.target.value))} /><FieldError id={`${id}-error`} errors={errors} /></label>
+  return <label><span>{label}</span><input type="number" min={min} step="1" value={value} aria-invalid={errors.length > 0} aria-describedby={errors.length ? `${id}-error` : undefined} onBlur={onTouch} onChange={(e) => { onTouch(); onChange(parseNumber(e.target.value)) }} /><FieldError id={`${id}-error`} errors={errors} /></label>
 }

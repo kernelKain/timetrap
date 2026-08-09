@@ -11,7 +11,7 @@ export function ObjectCard({ object, index, errors, onChange, onRemove, onTouch 
   return <article className="panel object-card">
     <div className="card-heading"><div><p className="eyebrow">Object {index + 1}</p><h3>{object.name || 'Untitled object'}</h3></div><button className="icon-button danger" type="button" onClick={onRemove} aria-label={`Remove ${object.name || `object ${index + 1}`}`}><Trash2 aria-hidden="true" /></button></div>
     <div className="form-grid two">
-      <label><span>Object name</span><input value={object.name} maxLength={160} aria-invalid={nameErrors.length > 0} aria-describedby={nameErrors.length ? `${object.clientId}-name-error` : undefined} onBlur={() => onTouch(`${prefix}.name`)} onChange={(e) => onChange({ ...object, name: e.target.value })} /><FieldError id={`${object.clientId}-name-error`} errors={nameErrors} /></label>
+      <label><span>Object name</span><input value={object.name} maxLength={80} aria-invalid={nameErrors.length > 0} aria-describedby={nameErrors.length ? `${object.clientId}-name-error` : undefined} onBlur={() => onTouch(`${prefix}.name`)} onChange={(e) => { onTouch(`${prefix}.name`); onChange({ ...object, name: e.target.value }) }} /><FieldError id={`${object.clientId}-name-error`} errors={nameErrors} /></label>
       <label><span>Object kind</span><select value={object.kind} onChange={(e) => onChange({ ...object, kind: e.target.value as TimedObjectDraft['kind'] })}>
         <option value="subscription">Subscription</option><option value="cached_entitlement">Cached entitlement</option><option value="session">Session</option><option value="token">Token</option><option value="invitation">Invitation</option><option value="credential">Credential</option>
       </select></label>

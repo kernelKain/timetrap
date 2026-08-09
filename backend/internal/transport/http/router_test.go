@@ -128,6 +128,60 @@ func TestValidateScenarioRoute(t *testing.T) {
 	}
 }
 
+func TestCORSAllowedOrigin(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+	request.Header.Set("Origin", "http://localhost:5173")
+	newTestRouter().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:5173" {
+		t.Fatalf("Access-Control-Allow-Origin = %q", got)
+	}
+	if got := recorder.Header().Get("Access-Control-Expose-Headers"); got != "X-Request-ID" {
+		t.Fatalf("Access-Control-Expose-Headers = %q", got)
+	}
+	if !strings.Contains(recorder.Header().Get("Vary"), "Origin") {
+		t.Fatalf("Vary = %q; want Origin", recorder.Header().Get("Vary"))
+	}
+}
+
+func TestCORSRejectedOrigin(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+	request.Header.Set("Origin", "https://untrusted.example")
+	newTestRouter().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("unexpected Access-Control-Allow-Origin %q", got)
+	}
+	assertJSONErrorResponse(t, recorder, ErrorCodeOriginNotAllowed, "")
+}
+
+func TestCORSPreflight(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodOptions, "/api/v1/scenarios", nil)
+	request.Header.Set("Origin", "http://localhost:5173")
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	request.Header.Set("Access-Control-Request-Headers", "Content-Type, X-Request-ID")
+	newTestRouter().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Methods"); got != "GET, POST, PUT, OPTIONS" {
+		t.Fatalf("Access-Control-Allow-Methods = %q", got)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Headers"); got != "Content-Type, X-Request-ID" {
+		t.Fatalf("Access-Control-Allow-Headers = %q", got)
+	}
+}
+
 func newTestRouter() http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 

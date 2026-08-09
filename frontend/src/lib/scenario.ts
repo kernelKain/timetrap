@@ -36,3 +36,15 @@ export function toScenarioRequest(draft: ScenarioDraft): ScenarioRequest | null 
 }
 
 export const parseNumber = (value: string): number | '' => value === '' ? '' : Number(value)
+
+export const scenarioFingerprint = (request: ScenarioRequest): string => JSON.stringify(request)
+
+export function fromScenarioRequest(request: ScenarioRequest): ScenarioDraft {
+  return {
+    name: request.name, description: request.description ?? '', horizonMinutes: request.horizonMinutes,
+    objects: request.objects.map((object, objectIndex) => ({ ...object, events: object.events.map((event, eventIndex) => ({ ...event, formId: `snapshot-event-${objectIndex}-${eventIndex}` })) })),
+    invariants: request.invariants.map((invariant, index) => ({
+      formId: `snapshot-invariant-${index}`, type: invariant.type, sourceObjectId: invariant.sourceObjectId ?? '', dependentObjectId: invariant.dependentObjectId ?? '', targetObjectId: invariant.targetObjectId ?? '', graceMinutes: invariant.graceMinutes ?? '', maximumMinutes: invariant.maximumMinutes ?? '',
+    })),
+  }
+}

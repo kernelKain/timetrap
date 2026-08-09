@@ -278,7 +278,7 @@ Expected result:
 - Policy-violation duration: 45 minutes
 - Responsible dependent: Premium entitlement cache
 
-# Planned architecture
+# Architecture
 ```mermaid
 flowchart LR
     B["User browser"] -->|"HTTPS"| W["React frontend on Zerops"]

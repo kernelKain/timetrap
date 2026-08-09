@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kernelKain/timetrap/backend/internal/analyzer"
+	"github.com/kernelKain/timetrap/backend/internal/config"
+	"github.com/kernelKain/timetrap/backend/internal/store/postgres"
 	httpapi "github.com/kernelKain/timetrap/backend/internal/transport/http"
 )
 
@@ -22,22 +26,56 @@ func main() {
 }
 
 func run() error {
-	port := environment("PORT", "8080")
-	version := environment("ENGINE_VERSION", "dev")
-	allowedOrigins := parseAllowedOrigins(
-		environment("ALLOWED_ORIGINS", "http://localhost:5173"),
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+
+	logger := configureLogger(cfg.LogLevel)
+
+	logger.Info("database configuration loaded")
+
+	startupContext, cancelStartup := context.WithTimeout(
+		context.Background(),
+		cfg.DatabaseConnectTimeout,
 	)
 
-	logger := configureLogger(environment("LOG_LEVEL", "debug"))
+	database, err := postgres.Open(
+		startupContext,
+		postgres.Config{
+			DatabaseURL:    cfg.DatabaseURL,
+			MaxConns:       cfg.DatabaseMaxConns,
+			MinConns:       cfg.DatabaseMinConns,
+			ConnectTimeout: cfg.DatabaseConnectTimeout,
+			QueryTimeout:   cfg.DatabaseQueryTimeout,
+		},
+	)
+	cancelStartup()
+
+	if err != nil {
+		logger.Error("database connectivity check failed")
+
+		// Return only an operation-level error because connection failures may
+		// contain database addressing or identity details.
+		return errors.New("database startup failed")
+	}
+	defer database.Close()
+
+	logger.Info("database connection pool ready")
 
 	handler := httpapi.NewRouter(
-		logger,
-		allowedOrigins,
-		version,
+		httpapi.Dependencies{
+			Scenarios:     database,
+			Analyses:      database,
+			Analyze:       analyzer.Analyze,
+			DatabaseReady: database.Ping,
+			Logger:        logger,
+		},
+		cfg.AllowedOrigins,
 	)
 
 	server := &http.Server{
-		Addr:              ":" + port,
+		Addr:              ":" + cfg.Port,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -57,10 +95,12 @@ func run() error {
 	go func() {
 		logger.Info(
 			"TimeTrap API starting",
+			"environment",
+			cfg.AppEnvironment,
 			"port",
-			port,
+			cfg.Port,
 			"version",
-			version,
+			cfg.EngineVersion,
 		)
 
 		serverErrors <- server.ListenAndServe()
@@ -89,28 +129,6 @@ func run() error {
 	}
 
 	return nil
-}
-
-func environment(name, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return fallback
-	}
-
-	return value
-}
-
-func parseAllowedOrigins(value string) []string {
-	origins := make([]string, 0)
-
-	for _, origin := range strings.Split(value, ",") {
-		origin = strings.TrimSpace(origin)
-		if origin != "" {
-			origins = append(origins, origin)
-		}
-	}
-
-	return origins
 }
 
 func configureLogger(levelName string) *slog.Logger {

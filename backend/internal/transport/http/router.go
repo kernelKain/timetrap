@@ -1,23 +1,30 @@
 package httpapi
 
 import (
-	"encoding/json"
-	"errors"
-	"io"
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/kernelKain/timetrap/backend/internal/domain"
+	"github.com/kernelKain/timetrap/backend/internal/store"
 )
 
 const maxRequestBodyBytes int64 = 1 << 20
 
+// Dependencies contains application services used by HTTP handlers.
+type Dependencies struct {
+	Scenarios     store.ScenarioRepository
+	Analyses      store.AnalysisRepository
+	Analyze       func(domain.Scenario) (domain.Analysis, error)
+	DatabaseReady func(context.Context) error
+	Logger        *slog.Logger
+}
+
 type healthResponse struct {
 	Status    string `json:"status"`
 	Service   string `json:"service"`
-	Version   string `json:"version"`
 	Database  string `json:"database"`
 	Timestamp string `json:"timestamp"`
 }
@@ -27,23 +34,52 @@ type validationSuccessResponse struct {
 	RequestID string `json:"requestId"`
 }
 
-// NewRouter constructs the complete Phase 2 HTTP handler.
+// NewRouter constructs the complete TimeTrap HTTP handler.
 //
-// Configuration values are supplied by main so environment-variable reading
-// remains outside the transport package.
+// Application dependencies and configuration are supplied by main so
+// environment reading, concrete storage and analyzer selection remain outside
+// the transport package.
 func NewRouter(
-	logger *slog.Logger,
+	dependencies Dependencies,
 	allowedOrigins []string,
-	version string,
 ) http.Handler {
+	logger := dependencies.Logger
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/api/v1/health", healthHandler(logger, version))
+	mux.HandleFunc(
+		"/api/v1/health",
+		healthHandler(dependencies),
+	)
+
+	mux.HandleFunc(
+		"/api/v1/scenarios",
+		scenarioCollectionHandler(dependencies),
+	)
+
 	mux.HandleFunc(
 		"/api/v1/scenarios/validate",
 		validateScenarioHandler(logger),
 	)
-	mux.HandleFunc("/", notFoundHandler(logger))
+
+	mux.HandleFunc(
+		"/api/v1/scenarios/{scenarioId}/analyses",
+		createAnalysisHandler(dependencies),
+	)
+
+	mux.HandleFunc(
+		"/api/v1/scenarios/{scenarioId}",
+		scenarioResourceHandler(dependencies),
+	)
+
+	mux.HandleFunc(
+		"/api/v1/analyses/{analysisId}",
+		getAnalysisHandler(dependencies),
+	)
+
+	mux.HandleFunc(
+		"/",
+		notFoundHandler(logger),
+	)
 
 	var handler http.Handler = mux
 
@@ -56,8 +92,7 @@ func NewRouter(
 }
 
 func healthHandler(
-	logger *slog.Logger,
-	version string,
+	dependencies Dependencies,
 ) http.HandlerFunc {
 	return func(
 		responseWriter http.ResponseWriter,
@@ -67,7 +102,7 @@ func healthHandler(
 			responseWriter.Header().Set("Allow", http.MethodGet)
 
 			respondError(
-				logger,
+				dependencies.Logger,
 				responseWriter,
 				request,
 				http.StatusMethodNotAllowed,
@@ -78,20 +113,44 @@ func healthHandler(
 			return
 		}
 
+		healthContext, cancel := context.WithTimeout(
+			request.Context(),
+			time.Second,
+		)
+		defer cancel()
+
+		statusCode := http.StatusOK
+		status := "ok"
+		databaseStatus := "connected"
+
+		if dependencies.DatabaseReady == nil ||
+			dependencies.DatabaseReady(healthContext) != nil {
+			statusCode = http.StatusServiceUnavailable
+			status = "degraded"
+			databaseStatus = "unavailable"
+
+			// Deliberately omit the database error. It may contain internal
+			// addressing or identity details.
+			dependencies.Logger.Warn(
+				"Database health check failed",
+				"request_id",
+				requestIDFromContext(request.Context()),
+			)
+		}
+
 		response := healthResponse{
-			Status:    "ok",
+			Status:    status,
 			Service:   "timetrap-api",
-			Version:   version,
-			Database:  "not_configured",
+			Database:  databaseStatus,
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		}
 
 		if err := writeJSON(
 			responseWriter,
-			http.StatusOK,
+			statusCode,
 			response,
 		); err != nil {
-			logger.Error(
+			dependencies.Logger.Error(
 				"Failed to write health response",
 				"request_id",
 				requestIDFromContext(request.Context()),
@@ -124,79 +183,12 @@ func validateScenarioHandler(
 			return
 		}
 
-		request.Body = http.MaxBytesReader(
+		_, accepted := validatedScenarioFromRequest(
+			logger,
 			responseWriter,
-			request.Body,
-			maxRequestBodyBytes,
+			request,
 		)
-
-		decoder := json.NewDecoder(request.Body)
-		decoder.DisallowUnknownFields()
-
-		var scenario domain.Scenario
-
-		if err := decoder.Decode(&scenario); err != nil {
-			message := "Request body must contain one valid JSON object."
-
-			var maxBytesError *http.MaxBytesError
-			if errors.As(err, &maxBytesError) {
-				message = "Request body must not exceed 1 MiB."
-			}
-
-			logger.Debug(
-				"Scenario JSON rejected",
-				"request_id",
-				requestIDFromContext(request.Context()),
-				"error",
-				err,
-			)
-
-			respondError(
-				logger,
-				responseWriter,
-				request,
-				http.StatusBadRequest,
-				ErrorCodeInvalidJSON,
-				message,
-				nil,
-			)
-			return
-		}
-
-		// A second decode must reach EOF. Any other result means the request
-		// contains trailing data or more than one JSON object.
-		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-			logger.Debug(
-				"Scenario JSON contains trailing data",
-				"request_id",
-				requestIDFromContext(request.Context()),
-				"error",
-				err,
-			)
-
-			respondError(
-				logger,
-				responseWriter,
-				request,
-				http.StatusBadRequest,
-				ErrorCodeInvalidJSON,
-				"Request body must contain exactly one JSON object.",
-				nil,
-			)
-			return
-		}
-
-		validationErrors := scenario.Validate()
-		if !validationErrors.Empty() {
-			respondError(
-				logger,
-				responseWriter,
-				request,
-				http.StatusUnprocessableEntity,
-				ErrorCodeValidationFailed,
-				"Scenario validation failed.",
-				validationErrors,
-			)
+		if !accepted {
 			return
 		}
 
@@ -243,10 +235,14 @@ func corsMiddleware(
 	allowedOrigins []string,
 	next http.Handler,
 ) http.Handler {
-	allowedOriginSet := make(map[string]struct{}, len(allowedOrigins))
+	allowedOriginSet := make(
+		map[string]struct{},
+		len(allowedOrigins),
+	)
 
 	for _, origin := range allowedOrigins {
 		origin = strings.TrimSpace(origin)
+
 		if origin != "" {
 			allowedOriginSet[origin] = struct{}{}
 		}
@@ -276,19 +272,26 @@ func corsMiddleware(
 				"Access-Control-Allow-Origin",
 				origin,
 			)
+
 			responseWriter.Header().Set(
 				"Access-Control-Allow-Methods",
-				"GET, POST, OPTIONS",
+				"GET, POST, PUT, OPTIONS",
 			)
+
 			responseWriter.Header().Set(
 				"Access-Control-Allow-Headers",
 				"Content-Type",
 			)
+
 			responseWriter.Header().Set(
 				"Access-Control-Expose-Headers",
 				"X-Request-ID",
 			)
-			responseWriter.Header().Add("Vary", "Origin")
+
+			responseWriter.Header().Add(
+				"Vary",
+				"Origin",
+			)
 		}
 
 		if request.Method == http.MethodOptions {

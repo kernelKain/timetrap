@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -131,9 +132,18 @@ func newTestRouter() http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	return NewRouter(
-		logger,
+		Dependencies{
+			Analyze: func(
+				domain.Scenario,
+			) (domain.Analysis, error) {
+				return domain.Analysis{}, nil
+			},
+			DatabaseReady: func(context.Context) error {
+				return nil
+			},
+			Logger: logger,
+		},
 		[]string{"http://localhost:5173"},
-		"test",
 	)
 }
 

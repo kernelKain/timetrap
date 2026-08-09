@@ -4,7 +4,7 @@
 
 TimeTrap is a design-time verifier that finds intervals where cached entitlements, sessions, tokens, or other authorization copies remain valid after their source authorization has been revoked.
 
-> Project status: Phase 1 — runnable React frontend and Go API shells.
+> Project status: Phase 4 — deterministic analysis, persistent scenarios, and immutable analysis reports.
 
 ## The problem
 
@@ -103,9 +103,9 @@ The hackathon MVP will allow users to:
 2. A dependent object must not outlive its source.
 3. An object must not remain valid longer than a configured maximum.
 
-TimeTrap will not include a general-purpose temporal-logic language during the hackathon.
+TimeTrap does not include a general-purpose temporal-logic language during the hackathon.
 
-## Planned architecture
+## Architecture
 
 ```text
 User browser
@@ -122,27 +122,92 @@ Pure temporal analyzer   Managed PostgreSQL
                          over a private network
 ```
 
-The PostgreSQL integration and temporal analyzer are intentionally deferred to later phases.
+The analyzer is a pure Go package with no HTTP or database dependency.
+
+PostgreSQL stores complete scenario definitions and immutable analysis snapshots. HTTP handlers depend only on repository interfaces and do not know about pgx or PostgreSQL implementation details.
 
 ## Current implementation
 
-Phase 1 provides:
+Phase 4 provides:
 
-- A React, TypeScript, Vite, and Tailwind frontend
+- A React, TypeScript, Vite, and Tailwind frontend shell
 - A standard-library Go HTTP API
-- `GET /api/v1/health`
-- Environment-controlled API URL and CORS origin
-- Healthy, checking, and unavailable frontend states
-- Structured API request and lifecycle logs
-- Graceful API shutdown
+- Strict JSON decoding and bounded domain validation
+- Request IDs and structured logs
+- Panic recovery and CORS middleware
+- Graceful HTTP and database shutdown
+- A pure deterministic temporal analyzer
+- Earliest half-open violation intervals
+- Deterministic remediation suggestions
+- PostgreSQL-backed scenario creation, retrieval, and updates
+- Persistent analysis reports with immutable scenario snapshots
+- Explicit Goose migrations
+- Database-aware health checks
+- Isolated handler tests using fake repositories
+- Build-tagged PostgreSQL integration tests
 
-No database, analyzer, authentication, scenario builder, or deployment logic is implemented yet.
+Stored analysis reports use the scenario snapshot captured when analysis ran. Updating the scenario later does not alter an earlier report.
+
+## API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/health` | Report API and database readiness |
+| `POST` | `/api/v1/scenarios/validate` | Validate without storing a scenario |
+| `POST` | `/api/v1/scenarios` | Validate and persist a scenario |
+| `GET` | `/api/v1/scenarios/{scenarioId}` | Retrieve a stored scenario |
+| `PUT` | `/api/v1/scenarios/{scenarioId}` | Replace a stored scenario definition |
+| `POST` | `/api/v1/scenarios/{scenarioId}/analyses` | Analyze and persist a scenario snapshot |
+| `GET` | `/api/v1/analyses/{analysisId}` | Retrieve a persistent analysis report |
+
+### Error contract
+
+API errors use a stable JSON envelope containing:
+
+- A machine-readable error code
+- A safe client-facing message
+- Optional validation fields
+- A request ID
+
+Internal analyzer, PostgreSQL, hostname, SQL, and credential details are never returned to clients.
+
+## Persistence
+
+Scenarios are stored as JSONB alongside relational metadata.
+
+Analysis records store:
+
+- Analysis UUID
+- Original scenario UUID
+- Immutable scenario snapshot
+- Safe or unsafe verdict
+- Complete analysis result
+- Analyzer engine version
+- Creation timestamp
+
+The snapshot ensures that an old analysis remains reproducible after its scenario is updated.
+
+PostgreSQL migrations are explicit. The API never runs migrations automatically.
 
 ## Requirements
 
 - Node.js 20.19+ or 22.12+
 - npm
-- Go 1.22+
+- Go 1.25+
+- PostgreSQL 16
+- Goose v3 as a separate migration CLI
+
+Install Goose:
+
+```bash
+go install github.com/pressly/goose/v3/cmd/goose@latest
+```
+
+Ensure the Go binary directory is available:
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
+```
 
 ## Local development
 
@@ -152,53 +217,194 @@ Install frontend dependencies:
 npm --prefix frontend install
 ```
 
-Start the Go API:
+Verify that local environment files are ignored:
 
 ```bash
-go -C backend run ./cmd/api
+git check-ignore .env
 ```
 
-The API defaults to `http://localhost:8080`.
+Expected:
 
-Start the frontend in another terminal:
+```text
+.env
+```
+
+Create an ignored local environment file:
+
+```bash
+cp .env.example .env
+```
+
+Replace the example database URL only inside the ignored `.env` file. Never commit a real connection string.
+
+The backend configuration includes:
+
+- `DATABASE_URL`
+- `DATABASE_MAX_CONNS`
+- `DATABASE_MIN_CONNS`
+- `DATABASE_CONNECT_TIMEOUT`
+- `DATABASE_QUERY_TIMEOUT`
+
+### Apply migrations
+
+Load the ignored environment inside a temporary subshell and apply migrations explicitly:
+
+```bash
+(
+  set +x
+  set -a
+  source .env
+  set +a
+
+  export GOOSE_DRIVER=postgres
+  export GOOSE_DBSTRING="$DATABASE_URL"
+
+  goose -dir backend/migrations status
+  goose -dir backend/migrations up
+  goose -dir backend/migrations status
+)
+```
+
+The environment variables disappear when the subshell exits.
+
+Use `goose down` only with a disposable development or test database and only when intentionally destroying its tables.
+
+### Start the API
+
+Load the ignored local configuration and start the API:
+
+```bash
+(
+  set +x
+  set -a
+  source .env
+  set +a
+
+  go -C backend run ./cmd/api
+)
+```
+
+The development API uses:
+
+```text
+http://localhost:8082
+```
+
+Test database readiness:
+
+```bash
+curl http://localhost:8082/api/v1/health
+```
+
+A healthy response reports:
+
+```json
+{
+  "status": "ok",
+  "service": "timetrap-api",
+  "database": "connected",
+  "timestamp": "..."
+}
+```
+
+If PostgreSQL is unavailable, health returns HTTP `503` with:
+
+```json
+{
+  "status": "degraded",
+  "service": "timetrap-api",
+  "database": "unavailable",
+  "timestamp": "..."
+}
+```
+
+Database errors, credentials, and hostnames are never included.
+
+### Start the frontend
+
+In another terminal:
 
 ```bash
 npm --prefix frontend run dev
 ```
 
-Open `http://localhost:5173`. The page should change from `Checking API…` to `API healthy`.
+Open:
 
-Test the API directly:
-
-```bash
-curl http://localhost:8080/api/v1/health
+```text
+http://localhost:5173
 ```
 
-Copy the safe example values from `.env.example` when environment customization is needed. Never commit `.env`, `.env.local`, `.mcp.json`, `.zcp/`, access tokens, or credentials.
+The frontend reads its API URL from `VITE_API_BASE_URL`.
+
+Never commit `.env`, `.env.local`, `.mcp.json`, `.zcp/`, access tokens, database credentials, or resolved Zerops references.
 
 ## Remote ZCP development
 
-The ZCP workspace already provides Browser VS Code, Codex, and project-scoped ZCP access.
+The ZCP workspace provides:
 
-If port `8080` is occupied, run the API on another port:
+- Browser VS Code
+- Codex
+- Project-scoped ZCP access
+- Private connectivity to managed PostgreSQL
+- Development and staging Go services
 
-```bash
-PORT=8082 go -C backend run ./cmd/api
-```
+Database credentials must be supplied through unresolved Zerops service references and temporary process environments. Do not print or persist resolved values.
 
-Remote code-server development can use an ignored `frontend/.env.development.local` file to configure its `/absproxy/5173/` path, allowed host, and API proxy target. Workspace-specific hostnames must not be committed.
+The backend requires Go 1.25. Zerops `appdev` and `appstage` must use `alpine/golang@latest` before this module is deployed. Do not deploy it to the older `go@1.22` runtime.
+
+Runtime upgrades and deployments require explicit approval.
+
+PostgreSQL must remain private and must not receive a public subdomain.
+
+Runtime-local files and process state are not persistent. PostgreSQL is the persistence boundary.
 
 ## Verification
 
-Backend:
+### Backend
+
+Format and run unit tests:
 
 ```bash
-gofmt -w backend
+go -C backend fmt ./...
 go -C backend test ./...
 go -C backend vet ./...
 ```
 
-Frontend:
+Check patch formatting:
+
+```bash
+git diff --check
+```
+
+### PostgreSQL integration test
+
+PostgreSQL integration tests are build-tagged and must use an isolated database named exactly `timetrap_test`.
+
+Apply migrations explicitly to the isolated test database before running the test.
+
+Supply `TEST_DATABASE_URL` securely through the process environment, then run:
+
+```bash
+go -C backend test \
+  -tags=integration \
+  ./internal/store/postgres \
+  -run '^TestPostgresPersistenceIntegration$' \
+  -count=1 \
+  -v
+```
+
+The integration test:
+
+- Skips when `TEST_DATABASE_URL` is absent
+- Refuses to run unless the parsed database name is exactly `timetrap_test`
+- Creates uniquely identified records
+- Deletes only the scenario created by that test
+- Uses the foreign key’s `ON DELETE CASCADE` behavior for its analysis
+- Verifies persistence after closing and reopening the pool
+
+Never run integration tests against production or the shared development database.
+
+### Frontend
 
 ```bash
 npm --prefix frontend run lint
@@ -207,4 +413,8 @@ npm --prefix frontend run build
 
 ## AI assistance
 
-Codex assisted with Phase 0 planning, Phase 1 scaffolding, implementation guidance, debugging, and documentation. Zerops Control Plane was used to inspect the project and adopt the existing development and staging services. All commands and acceptance checks were manually run and reviewed.                         
+Codex assisted with phased planning, implementation guidance, debugging, test design, security review, and documentation.
+
+Zerops Control Plane was used for read-only project discovery, approval-gated database creation, explicit migrations, and isolated integration-test execution.
+
+Commands, infrastructure mutations, and acceptance checks were manually approved and reviewed.

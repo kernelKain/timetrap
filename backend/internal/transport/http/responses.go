@@ -14,12 +14,18 @@ import (
 type ErrorCode string
 
 const (
-	ErrorCodeInvalidJSON      ErrorCode = "INVALID_JSON"
-	ErrorCodeValidationFailed ErrorCode = "VALIDATION_FAILED"
-	ErrorCodeMethodNotAllowed ErrorCode = "METHOD_NOT_ALLOWED"
-	ErrorCodeNotFound         ErrorCode = "NOT_FOUND"
-	ErrorCodeInternal         ErrorCode = "INTERNAL_ERROR"
-	ErrorCodeOriginNotAllowed ErrorCode = "ORIGIN_NOT_ALLOWED"
+	ErrorCodeInvalidJSON           ErrorCode = "INVALID_JSON"
+	ErrorCodeValidationFailed      ErrorCode = "VALIDATION_FAILED"
+	ErrorCodeMethodNotAllowed      ErrorCode = "METHOD_NOT_ALLOWED"
+	ErrorCodeNotFound              ErrorCode = "NOT_FOUND"
+	ErrorCodeInternal              ErrorCode = "INTERNAL_ERROR"
+	ErrorCodeOriginNotAllowed      ErrorCode = "ORIGIN_NOT_ALLOWED"
+	ErrorCodeInvalidID             ErrorCode = "INVALID_ID"
+	ErrorCodeScenarioNotFound      ErrorCode = "SCENARIO_NOT_FOUND"
+	ErrorCodeStorage               ErrorCode = "STORAGE_ERROR"
+	ErrorCodeScenarioNotAnalyzable ErrorCode = "SCENARIO_NOT_ANALYZABLE"
+	ErrorCodeAnalysisFailed        ErrorCode = "ANALYSIS_FAILED"
+	ErrorCodeAnalysisNotFound      ErrorCode = "ANALYSIS_NOT_FOUND"
 )
 
 type errorResponse struct {

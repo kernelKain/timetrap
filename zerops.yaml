@@ -24,7 +24,7 @@ zerops:
       envVariables:
         PORT: "8080"
         APP_ENV: production
-        DATABASE_URL: ${db_connectionString}
+        DATABASE_URL: ${db_connectionString}/${db_dbName}
         CORS_ALLOWED_ORIGINS: ${web_zeropsSubdomain}
         LOG_LEVEL: info
         ENGINE_VERSION: v1

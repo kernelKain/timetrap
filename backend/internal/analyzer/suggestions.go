@@ -132,6 +132,26 @@ func revocationGraceRemediation(
 	}
 
 	suggestedMinute := sourceState.LastEventMinute
+	deadline := suggestedMinute + *invariant.GraceMinutes
+	upperBound := deadline
+	if upperBound > scenario.HorizonMinutes {
+		upperBound = scenario.HorizonMinutes
+	}
+
+	// The dependent object allows only one event per minute. Revoking the
+	// dependent at a minute that already carries one of its events would
+	// produce a correction that fails validation on apply, so advance to
+	// the earliest free minute. Every minute up to and including the
+	// deadline keeps the corrected scenario safe.
+	adjustedMinute, hasFreeMinute := firstFreeMinuteAtOrAfter(
+		occupiedEventMinutes(scenario, invariant.DependentObjectID),
+		suggestedMinute,
+		upperBound,
+	)
+	if !hasFreeMinute {
+		return domain.Remediation{}, nil
+	}
+	suggestedMinute = adjustedMinute
 	event := domain.Event{Type: domain.EventTypeRevoke, AtMinute: suggestedMinute}
 
 	return domain.Remediation{
@@ -175,6 +195,27 @@ func dependentOutlivesSourceRemediation(
 			eventType = sourceState.LastEventType
 		}
 	}
+
+	// The dependent object allows only one event per minute, and expiring
+	// it after the violation start would leave a residual violation behind.
+	// Move to the latest free minute at or before the ideal minute that is
+	// still covered by the dependent's current validity period. If no such
+	// minute exists, no automatic correction can remove the violation.
+	dependentState := statesAt(scenario.Objects, violation.StartMinute)[invariant.DependentObjectID]
+	lowerBound := 0
+	if dependentState.HasValidSince {
+		lowerBound = dependentState.ValidSince + 1
+	}
+
+	adjustedMinute, hasFreeMinute := firstFreeMinuteAtOrBefore(
+		occupiedEventMinutes(scenario, invariant.DependentObjectID),
+		suggestedMinute,
+		lowerBound,
+	)
+	if !hasFreeMinute {
+		return domain.Remediation{}, nil
+	}
+	suggestedMinute = adjustedMinute
 	event := domain.Event{Type: eventType, AtMinute: suggestedMinute}
 
 	return domain.Remediation{
@@ -274,4 +315,58 @@ func remediationSourceState(
 		violation.InvariantIndex,
 		"source",
 	)
+}
+
+// occupiedEventMinutes returns the set of minutes at which the given object
+// already carries an event. Only one event per object is allowed per minute,
+// so a suggested correction must avoid these minutes.
+func occupiedEventMinutes(
+	scenario domain.Scenario,
+	objectID string,
+) map[int]struct{} {
+	occupied := make(map[int]struct{})
+
+	for _, object := range scenario.Objects {
+		if object.ClientID != objectID {
+			continue
+		}
+
+		for _, event := range object.Events {
+			occupied[event.AtMinute] = struct{}{}
+		}
+	}
+
+	return occupied
+}
+
+// firstFreeMinuteAtOrAfter returns the earliest minute in
+// [idealMinute, upperBound] without an existing event.
+func firstFreeMinuteAtOrAfter(
+	occupied map[int]struct{},
+	idealMinute int,
+	upperBound int,
+) (int, bool) {
+	for minute := idealMinute; minute <= upperBound; minute++ {
+		if _, taken := occupied[minute]; !taken {
+			return minute, true
+		}
+	}
+
+	return 0, false
+}
+
+// firstFreeMinuteAtOrBefore returns the latest minute in
+// [lowerBound, idealMinute] without an existing event.
+func firstFreeMinuteAtOrBefore(
+	occupied map[int]struct{},
+	idealMinute int,
+	lowerBound int,
+) (int, bool) {
+	for minute := idealMinute; minute >= lowerBound; minute-- {
+		if _, taken := occupied[minute]; !taken {
+			return minute, true
+		}
+	}
+
+	return 0, false
 }
